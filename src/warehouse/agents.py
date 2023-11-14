@@ -4,12 +4,19 @@ import mesa
 NUMBER_OF_CELLS = 50
 BUSY = 0
 FREE = 1
+EMPTYING = 2
+
 UNDONE = 0
+UNDERWAY = 2
 DONE = 1
 
-class PickerRobot(mesa.Agent):
+
+CR_MAX_PAYLOAD = 3
+MAX_SPEED = 2
+
+class CT_Robot(mesa.Agent):
     """Represents a Robot of the warehouse."""
-    def __init__(self, id, pos, model, init_state=FREE):
+    def __init__(self, id, pos, model, max_payload=CR_MAX_PAYLOAD, speed=MAX_SPEED, init_state=FREE):
         """
         Initialise state attributes, including:
           * current and next position of the robot
@@ -22,6 +29,10 @@ class PickerRobot(mesa.Agent):
         self.next_x, self.next_y = None, None
         self.state = init_state
         self.payload = []
+        self.max_payload = max_payload
+        self.speed = speed
+        self.target = None
+
   
 
     @property
@@ -44,32 +55,76 @@ class PickerRobot(mesa.Agent):
         Simple rule-based architecture, should determine the action to execute based on the robot state.
         """
         action = "wait"
-        # TODO implement
+        boxes = [a for a in self.model.schedule.agents if (isinstance(a,Box) and (a.state == UNDONE or a.state == UNDERWAY))]
+        if len(boxes) == 0:
+            print("CT", self.unique_id, "is waiting")
+            return action
 
-        print("picker position is: ", self.x, ",", self.y)
-        print("picker next position is: ", self.next_x, ",", self.next_y)
+        print("CT", self.unique_id, "state is:", self.state)
+        print("CT", self.unique_id, "position is: ", self.x, ",", self.y)
+        if self.target:
+            print("CT", self.unique_id, "target is at:", self.target.x, self.target.y)
+        print("CT", self.unique_id, "payload is:", len(self.payload))
+        print("Payload contains", self.payload)
 
-        print("picker payload is:", self.payload)
-
-        if self.state == FREE:
-            next_position = (self.x + 1, self.y)
-            if not self.model.grid.is_cell_empty(next_position):
+        if self.state == EMPTYING:
+            if (self.x == self.target.x and self.y == self.target.y):
+                print("CT is at wastebin, now unloading")
+                action = "drop_off"
+            else:
+                print("moving towards waste bin")
+                action = "move_fw"
+        elif self.state == FREE:
+            if len(self.payload) > self.max_payload:
+                print("moving to bin")
+                action = "move_to_bin"
+            elif not self.target:
+                print("Robot is finding target")
+                action = "find_target"
+            elif (self.x == self.target.x) and (self.y == self.target.y):
                 print("Robot is now picking")
                 action = "pick"
-            elif next_position[0] < NUMBER_OF_CELLS-1:
+            else:
                 print("Robot is now moving forwards")
                 action = "move_fw"
         else:
-            if self.pos[0]-1 == 0:
-                print("Robot is now dropping off")
-                action = "drop_off"
-            else:
-                print("Robot is now moving backwards")
-                action = "move_bw"
+            print("Robot is now returning to ")
+            action = "move_fw" # Return to base
         return action
 
     
     # Robot actions
+    def find_target(self):
+        """
+        Finds within area and sets it as target.
+        If no box found, set waste bin as target.
+        """
+        boxes = [a for a in self.model.schedule.agents if (isinstance(a,Box) and (a.unique_id not in self.payload) and a.state == UNDONE)]
+
+        if boxes == []:
+            print("No Target Found")
+            self.state = EMPTYING
+            wb = [a for a in self.model.schedule.agents if isinstance(a,WasteBin)]
+            self.target = wb[0]
+            return
+        
+        for box in boxes:
+            print(box.state)
+
+        # Get closes box
+        closest_box = boxes[0]
+        for box in boxes:
+            if self.get_distance(box) < self.get_distance(closest_box):
+                closest_box = box
+                print("closest box is at", closest_box.x, closest_box.y) 
+
+        self.target = closest_box
+        closest_box.state = UNDERWAY
+
+
+    def move_to_bin(self):
+        self.target = [a for a in self.model.schedule.agents if isinstance(a,WasteBin)]
+
 
     def move(self):
         """
@@ -80,15 +135,17 @@ class PickerRobot(mesa.Agent):
         self.x = self.next_x
         self.y = self.next_y
 
+
     def move_payload(self):
         """
         * Obtains the box whose id is in the payload (Hint: you can use the method: self.model.schedule.agents to iterate over existing agents.)
         * move the payload together with the robot
         """
         # TODO implement
-        box = [a for a in self.model.schedule.agents if isinstance(a,Box) and a.unique_id == self.payload]
-        if len(box)>0:
-            self.model.grid.move_agent(box[0],(self.x,self.y))
+        boxes = [a for a in self.model.schedule.agents if isinstance(a,Box) and a.unique_id in self.payload]
+        for box in boxes:
+            self.model.grid.move_agent(box,(self.x,self.y))
+
 
     def wait(self):
         """
@@ -98,12 +155,33 @@ class PickerRobot(mesa.Agent):
         self.next_x = self.x
         self.next_y = self.y
 
+
     def move_fw(self):
-        """Move the robot towards the boxes from left to right."""
+        """Move the robot towards the target"""
         # TODO implement
-        self.next_x = self.x+1
-        self.next_y = self.y
+        x_dif = abs(self.x - self.target.x)
+        y_dif = abs(self.y - self.target.y)
+
+        if x_dif==0 and y_dif==0:
+            self.state = FREE
+
+
+        if (x_dif > self.speed) and (self.target.x > self.x):
+            self.next_x = self.x + self.speed
+        elif (x_dif > self.speed) and (self.target.x < self.x):
+            self.next_x = self.x - self.speed
+        else:
+            self.next_x = self.target.x
+
+        if (y_dif > self.speed) and (self.target.y > self.y):
+            self.next_y = self.y + self.speed
+        elif (y_dif > self.speed) and (self.target.y < self.y):
+            self.next_y = self.y - self.speed
+        else:
+            self.next_y = self.target.y
+
         self.move()
+        self.move_payload()
     
     def move_bw(self):
         """Move the robot and the payload towards the collection point (right to left)."""
@@ -115,34 +193,39 @@ class PickerRobot(mesa.Agent):
         
     def pick(self):
         """
-        * change robot state to Busy
+        * change robot state to Busy if overloaded
         * find out the id of the box next to the robot
         * store the box id in the payload of the robot
         """
-        # TODO implement
-        self.state = BUSY
-        nbs = [nb for nb in self.model.grid.iter_neighbors((self.x,self.y), False)]
+        box = [a for a in self.model.schedule.agents if isinstance(a,Box) and a.unique_id==self.target.unique_id]
+        box[0].state = UNDERWAY
+        self.payload.append(self.target.unique_id)
 
-        for i in range(len(nbs)):
-            if isinstance(nbs[i],Box):
-                box = nbs[0]
-                self.payload = box.unique_id
+        # If maximum payload is exceeded set target to waste bin
+        if len(self.payload) >= self.max_payload:
+            self.state = EMPTYING
+            wb = [a for a in self.model.schedule.agents if isinstance(a,WasteBin)]
+            self.target = wb[0]
+            print("Heading towards waste bin at", self.target.x, self.target.y)
+        else:
+            self.target = None
     
     def drop_off(self):
         """
         * change state of the robot to Free
         * Get the Box whose id is in the payload and remove it from the grid and change its state to Done.
         * Remove payload from robot
-        * move agent to next position ahead of the box
         """
-        # TODO implement
         self.state = FREE
-        box = [a for a in self.model.schedule.agents if isinstance(a,Box) and a.unique_id == self.payload]
-        if len(box)>0:
-            box[0].state = DONE
-            self.model.grid.remove_agent(box[0])
-        self.payload = None
-        self.next_x = self.next_x + 1
+        boxes = [a for a in self.model.schedule.agents if isinstance(a,Box) and a.unique_id in self.payload]
+        
+        print("Removing Box/s from game")
+        for box in boxes:
+            box.state = DONE
+            self.model.grid.remove_agent(box)
+        
+        self.payload = []
+        self.target = None
         self.move()
    
     def advance(self):
@@ -151,6 +234,13 @@ class PickerRobot(mesa.Agent):
        """
        self.x = self.next_x
        self.y = self.next_y
+
+    def get_distance(self, box):
+        """
+        Uses the manhattan distance for simplification.
+        """
+        return abs(self.x - box.x) + abs(self.y - box.y)
+    
 
 
 class Box(mesa.Agent):
@@ -163,3 +253,32 @@ class Box(mesa.Agent):
         # TODO implement
         self.state = UNDONE
         self.x, self.y = pos
+
+class WasteBin(mesa.Agent):
+    """Represents a Waste Bin where robots deposit waste."""
+    def __init__(self, id, pos, model, init_state=UNDONE):
+        """
+        Intialise state and position of the box
+        """
+        super().__init__(id, model)
+        self.x, self.y = pos
+
+class ChargingPoint(mesa.Agent):
+    """Represents a Waste Bin where robots deposit waste."""
+    def __init__(self, id, pos, model, init_state=UNDONE):
+        """
+        Intialise state and position of the box
+        """
+        super().__init__(id, model)
+        self.x, self.y = pos
+
+class Obstacle(mesa.Agent):
+    """Represents a Waste Bin where robots deposit waste."""
+    def __init__(self, id, pos, model, init_state=UNDONE):
+        """
+        Intialise state and position of the box
+        """
+        super().__init__(id, model)
+        self.x, self.y = pos
+
+
