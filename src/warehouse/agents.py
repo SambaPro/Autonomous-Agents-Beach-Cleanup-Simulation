@@ -2,10 +2,10 @@ from optparse import check_builtin
 import mesa
 
 NUMBER_OF_CELLS = 50
-BUSY = 0
-FREE = 1
-EMPTYING = 2
-CHARGING = 3
+BUSY = 0              # Moving towards target/picking target
+FREE = 1              # Idle (Default State)
+EMPTYING = 2          # Moving towards wastebin / Emptying cargo
+CHARGING = 3          # Moving towards charging point/ Waiting to be fully charged
 
 UNDONE = 0
 UNDERWAY = 2
@@ -112,13 +112,18 @@ class CT_Robot(mesa.Agent):
                 action = "move_fw"
 
         elif self.state == FREE:
-            if len(self.payload) > self.max_payload:
+            if self.charge < 100:
+                print("moving to charging point")
+                action = "goto_charging_station"
+            elif len(self.payload) > self.max_payload:
                 print("moving to bin")
                 action = "move_to_bin"
             elif not self.target:
                 print("Robot is finding target")
                 action = "find_target"
-            elif (self.x == self.target.x) and (self.y == self.target.y):
+
+        elif self.state == BUSY:
+            if (self.x == self.target.x) and (self.y == self.target.y):
                 print("Robot is now picking")
                 action = "pick"
             else:
@@ -129,7 +134,7 @@ class CT_Robot(mesa.Agent):
             action = "goto_charging_station" # Return to base
         return action
 
-    
+
     # Robot actions
     def find_target(self):
         """
@@ -161,6 +166,7 @@ class CT_Robot(mesa.Agent):
                 print("closest box is at", closest_box.x, closest_box.y) 
 
         self.target = closest_box
+        self.state = BUSY
         closest_box.state = UNDERWAY
 
 
@@ -258,6 +264,7 @@ class CT_Robot(mesa.Agent):
             print("Heading towards waste bin at", self.target.x, self.target.y)
         else:
             self.target = None
+            self.state = FREE
     
     def drop_off(self):
         """
