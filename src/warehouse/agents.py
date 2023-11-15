@@ -5,13 +5,16 @@ NUMBER_OF_CELLS = 50
 BUSY = 0
 FREE = 1
 EMPTYING = 2
+CHARGING = 3
 
 UNDONE = 0
 UNDERWAY = 2
 DONE = 1
 
-
+NEEDS_CHARGE = True
 CR_MAX_PAYLOAD = 3
+MAX_CHARGE = 300
+CHARGING_SPEED = 10
 MAX_SPEED = 2
 
 class CT_Robot(mesa.Agent):
@@ -32,12 +35,23 @@ class CT_Robot(mesa.Agent):
         self.max_payload = max_payload
         self.speed = speed
         self.target = None
+        self.charge = MAX_CHARGE
 
   
-
     @property
     def isBusy(self):
         return self.state == BUSY
+    
+    @property
+    def atChargingPoint(self):
+        chp = [a for a in self.model.schedule.agents if isinstance(a,ChargingPoint)]
+        #print("Charging point is at", chp[0].x, chp[0].y, "Robot is at", self.x, self.y)
+        return (self.x == chp[0].x and self.y == chp[0].y)
+    
+    @property
+    def atWasteBin(self):
+        wb = [a for a in self.model.schedule.agents if isinstance(a,WasteBin)]
+        return self.x == wb[0].x and self.y == wb[0]
 
     def step(self):
         """
@@ -49,16 +63,10 @@ class CT_Robot(mesa.Agent):
         action()
 
     # Robot decision model
-
     def deliberate(self):
         """
         Simple rule-based architecture, should determine the action to execute based on the robot state.
         """
-        action = "wait"
-        boxes = [a for a in self.model.schedule.agents if (isinstance(a,Box) and (a.state == UNDONE or a.state == UNDERWAY))]
-        if len(boxes) == 0:
-            print("CT", self.unique_id, "is waiting")
-            return action
 
         print("CT", self.unique_id, "state is:", self.state)
         print("CT", self.unique_id, "position is: ", self.x, ",", self.y)
@@ -67,13 +75,42 @@ class CT_Robot(mesa.Agent):
         print("CT", self.unique_id, "payload is:", len(self.payload))
         print("Payload contains", self.payload)
 
-        if self.state == EMPTYING:
+        # When all boxes are busy
+        action = "goto_charging_station"
+        boxes = [a for a in self.model.schedule.agents if (isinstance(a,Box) and (a.state == UNDONE or a.state == UNDERWAY))]
+        if len(boxes) == 0 and not self.payload:
+            print("CT", self.unique_id, "is returning to charging station")
+            return action
+        elif len(boxes) == 0 and self.payload:
+            print("Moving Payload to waste bin")
+            action = "move_to_bin"
+            return action
+
+        if self.state == CHARGING:
+            #print(self.atChargingPoint)
+            if self.charge >= MAX_CHARGE:
+                self.state = FREE
+                self.charge = MAX_CHARGE
+                action = "find_target"
+            elif self.atChargingPoint:
+                print("CT is at chargingpoint, now waiting until fully charged")
+                self.charge += CHARGING_SPEED
+                print("charge is now",self.charge)
+                action = "wait"
+            else:
+                print("moving towards charging point")
+                tar = [a for a in self.model.schedule.agents if isinstance(a,ChargingPoint)]
+                self.target = tar[0]
+                action = "move_fw"
+
+        elif self.state == EMPTYING:
             if (self.x == self.target.x and self.y == self.target.y):
                 print("CT is at wastebin, now unloading")
                 action = "drop_off"
             else:
                 print("moving towards waste bin")
                 action = "move_fw"
+
         elif self.state == FREE:
             if len(self.payload) > self.max_payload:
                 print("moving to bin")
@@ -88,8 +125,8 @@ class CT_Robot(mesa.Agent):
                 print("Robot is now moving forwards")
                 action = "move_fw"
         else:
-            print("Robot is now returning to ")
-            action = "move_fw" # Return to base
+            print("Robot is now returning to charging station")
+            action = "goto_charging_station" # Return to base
         return action
 
     
@@ -103,9 +140,14 @@ class CT_Robot(mesa.Agent):
 
         if boxes == []:
             print("No Target Found")
-            self.state = EMPTYING
-            wb = [a for a in self.model.schedule.agents if isinstance(a,WasteBin)]
-            self.target = wb[0]
+            if self.payload:
+                self.state = EMPTYING
+                tar = [a for a in self.model.schedule.agents if isinstance(a,WasteBin)]
+            else:
+                self.state = CHARGING
+                tar = [a for a in self.model.schedule.agents if isinstance(a,ChargingPoint)]
+
+            self.target = tar[0]
             return
         
         for box in boxes:
@@ -123,17 +165,32 @@ class CT_Robot(mesa.Agent):
 
 
     def move_to_bin(self):
-        self.target = [a for a in self.model.schedule.agents if isinstance(a,WasteBin)]
+        self.state = EMPTYING
+        bin = [a for a in self.model.schedule.agents if isinstance(a,WasteBin)]
+        self.target = bin[0]
+
+    def goto_charging_station(self):
+        self.state = CHARGING
+        chp = [a for a in self.model.schedule.agents if isinstance(a,ChargingPoint)]
+        self.target = chp[0]
 
 
     def move(self):
         """
         Move robot to the next position.
         """
-        # TODO implement
+        cells_moved = abs(self.x - self.next_x) + abs(self.y - self.next_y)
+
         self.model.grid.move_agent(self, (self.next_x, self.next_y))
         self.x = self.next_x
         self.y = self.next_y
+
+        if NEEDS_CHARGE:
+            self.charge -= cells_moved
+        print("CT",self.unique_id, "charge is now",self.charge)
+
+        if self.charge < 100 and not self.target:
+            self.state = CHARGING
 
 
     def move_payload(self):
@@ -165,7 +222,6 @@ class CT_Robot(mesa.Agent):
         if x_dif==0 and y_dif==0:
             self.state = FREE
 
-
         if (x_dif > self.speed) and (self.target.x > self.x):
             self.next_x = self.x + self.speed
         elif (x_dif > self.speed) and (self.target.x < self.x):
@@ -182,14 +238,7 @@ class CT_Robot(mesa.Agent):
 
         self.move()
         self.move_payload()
-    
-    def move_bw(self):
-        """Move the robot and the payload towards the collection point (right to left)."""
-        # TODO implement
-        self.next_x = self.x-1
-        self.next_y = self.y
-        self.move()
-        self.move_payload()
+
         
     def pick(self):
         """
