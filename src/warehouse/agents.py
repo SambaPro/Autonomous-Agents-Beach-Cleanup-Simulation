@@ -1,25 +1,35 @@
 from optparse import check_builtin
 import mesa
+import random
 
 NUMBER_OF_CELLS = 50
+""" Agent States """
 BUSY = 0              # Moving towards target/picking target
 FREE = 1              # Idle (Default State)
 EMPTYING = 2          # Moving towards wastebin / Emptying cargo
 CHARGING = 3          # Moving towards charging point/ Waiting to be fully charged
 
+""" Box States """
 UNDONE = 0
 UNDERWAY = 2
 DONE = 1
 
-NEEDS_CHARGE = True
+""" Agent Parameters """
+# General Parameters
+
+# LC Parameters
+
+# CR Parameters
 CR_MAX_PAYLOAD = 3
-MAX_CHARGE = 300
-CHARGING_SPEED = 10
-MAX_SPEED = 2
+CR_SPEED = 1
+NEEDS_CHARGE = True
+MAX_CHARGE = 300     # Maximum and starting charge, will decrease by 1 for each tile traversed
+MIN_CHARGE = 100     # When agent reaches this charge level, they will return to charging station
+CHARGING_SPEED = 50  # Charge restored each step once at charging station
 
 class CT_Robot(mesa.Agent):
     """Represents a Robot of the warehouse."""
-    def __init__(self, id, pos, model, max_payload=CR_MAX_PAYLOAD, speed=MAX_SPEED, init_state=FREE):
+    def __init__(self, id, pos, model, max_payload=CR_MAX_PAYLOAD, speed=CR_SPEED, init_state=FREE):
         """
         Initialise state attributes, including:
           * current and next position of the robot
@@ -27,7 +37,6 @@ class CT_Robot(mesa.Agent):
           * payload (id of any box the robot is carrying)
         """
         super().__init__(id, model)
-        # TODO implement
         self.x, self.y = pos
         self.next_x, self.next_y = None, None
         self.state = init_state
@@ -58,7 +67,6 @@ class CT_Robot(mesa.Agent):
         * Obtain action as a result of deliberation
         * trigger action
         """
-        # TODO implement
         action = getattr(self, self.deliberate())
         action()
 
@@ -195,7 +203,7 @@ class CT_Robot(mesa.Agent):
             self.charge -= cells_moved
         print("CT",self.unique_id, "charge is now",self.charge)
 
-        if self.charge < 100 and not self.target:
+        if self.charge < MIN_CHARGE and not self.target:
             self.state = CHARGING
 
 
@@ -204,7 +212,6 @@ class CT_Robot(mesa.Agent):
         * Obtains the box whose id is in the payload (Hint: you can use the method: self.model.schedule.agents to iterate over existing agents.)
         * move the payload together with the robot
         """
-        # TODO implement
         boxes = [a for a in self.model.schedule.agents if isinstance(a,Box) and a.unique_id in self.payload]
         for box in boxes:
             self.model.grid.move_agent(box,(self.x,self.y))
@@ -214,14 +221,12 @@ class CT_Robot(mesa.Agent):
         """
         Keep the same position as the current one.
         """
-        # TODO implement
         self.next_x = self.x
         self.next_y = self.y
 
 
     def move_fw(self):
         """Move the robot towards the target"""
-        # TODO implement
         x_dif = abs(self.x - self.target.x)
         y_dif = abs(self.y - self.target.y)
 
@@ -241,6 +246,36 @@ class CT_Robot(mesa.Agent):
             self.next_y = self.y - self.speed
         else:
             self.next_y = self.target.y
+
+        # Obstacle avoidance using random movement
+        if self.containsObstacle(self.next_x,self.next_y):
+            print("next tile has an obstacle, changing next tile")
+            
+            while True:
+                move = random.choice(["up","down","left","right"])
+                if move == "up":
+                    if self.containsObstacle(self.x,self.y+1):
+                        continue
+                    self.next_y = self.y+1
+                    break
+
+                if move == "down":
+                    if self.containsObstacle(self.x,self.y-1):
+                        continue
+                    self.next_y = self.y-1
+                    break
+
+                if move == "left":
+                    if self.containsObstacle(self.x-1,self.y):
+                        continue
+                    self.next_x = self.x-1
+                    break
+
+                if move == "right":
+                    if self.containsObstacle(self.x+1,self.y):
+                        continue
+                    self.next_x = self.x+1
+                    break
 
         self.move()
         self.move_payload()
@@ -297,6 +332,13 @@ class CT_Robot(mesa.Agent):
         """
         return abs(self.x - box.x) + abs(self.y - box.y)
     
+    def containsObstacle(self, x,y):
+        obstacles = [a for a in self.model.schedule.agents if isinstance(a,Obstacle) and a.x == x and a.y == y]
+        if obstacles:
+            return True
+        else: 
+            return False
+    
 
 
 class Box(mesa.Agent):
@@ -306,7 +348,6 @@ class Box(mesa.Agent):
         Intialise state and position of the box
         """
         super().__init__(id, model)
-        # TODO implement
         self.state = UNDONE
         self.x, self.y = pos
 
@@ -336,5 +377,6 @@ class Obstacle(mesa.Agent):
         """
         super().__init__(id, model)
         self.x, self.y = pos
+
 
 

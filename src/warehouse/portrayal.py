@@ -10,7 +10,7 @@ def warehouse_portrayal(agent):
    Determine which portrayal to use according to the type of agent.
    """
    if isinstance(agent,CT_Robot):
-        return robot_portrayal(agent)
+        return CT_portrayal(agent)
    elif isinstance(agent, WasteBin):
        return wastebin_portrayal(agent)
    elif isinstance(agent, ChargingPoint):
@@ -21,9 +21,8 @@ def warehouse_portrayal(agent):
    else:
         return box_portrayal(agent)
 
-def robot_portrayal(robot):
-
-    if robot is None:
+def CT_portrayal(CT):
+    if CT is None:
         raise AssertionError
     return {
         "Shape": "arrowHead",
@@ -31,13 +30,13 @@ def robot_portrayal(robot):
         "h": 1,
         "Filled": "true",
         "Layer": 0,
-        "x": robot.x,
-        "y": robot.y,
+        "x": CT.x,
+        "y": CT.y,
         "scale": 2,
-        "heading_x": -1 if robot.isBusy else 1,
+        "heading_x": -1 if CT.isBusy else 1,
         "heading_y":0,
         # "r":4,
-        "Color": "red" if robot.isBusy else "green",
+        "Color": "red" if CT.isBusy else "green",
     }
 
 def box_portrayal(box):
@@ -55,9 +54,8 @@ def box_portrayal(box):
         "Color": "blue",
     }
 
-def wastebin_portrayal(box):
-
-    if box is None:
+def wastebin_portrayal(wb):
+    if wb is None:
         raise AssertionError
     return {
         "Shape": "rect",
@@ -65,14 +63,13 @@ def wastebin_portrayal(box):
         "h": 1,
         "Filled": "true",
         "Layer": 0,
-        "x": box.x,
-        "y": box.y,
+        "x": wb.x,
+        "y": wb.y,
         "Color": "blue",
     }
 
-def chargingpoint_portrayal(box):
-
-    if box is None:
+def chargingpoint_portrayal(chp):
+    if chp is None:
         raise AssertionError
     return {
         "Shape": "rect",
@@ -80,14 +77,13 @@ def chargingpoint_portrayal(box):
         "h": 1,
         "Filled": "true",
         "Layer": 0,
-        "x": box.x,
-        "y": box.y,
+        "x": chp.x,
+        "y": chp.y,
         "Color": "blue",
     }
 
-def obstacle_portrayal(box):
-
-    if box is None:
+def obstacle_portrayal(obst):
+    if obst is None:
         raise AssertionError
     return {
         "Shape": "rect",
@@ -95,7 +91,7 @@ def obstacle_portrayal(box):
         "h": 1,
         "Filled": "true",
         "Layer": 0,
-        "x": box.x,
-        "y": box.y,
-        "Color": "blue",
+        "x": obst.x,
+        "y": obst.y,
+        "Color": "black",
     }

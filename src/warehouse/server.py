@@ -7,9 +7,10 @@ from .agents import NUMBER_OF_CELLS
 SIZE_OF_CANVAS_IN_PIXELS_X = 300
 SIZE_OF_CANVAS_IN_PIXELS_Y = 300
 
-NUMBER_OF_BOXES = 8
 LC_NUM = 1
 RC_NUM = 2
+NUMBER_OF_BOXES = 8
+NUMBER_OF_OBSTACLES = 20
 
 # TODO Add a parameter named "n_boxes" for the number of boxes to include in the model.
 simulation_params = {
@@ -29,6 +30,14 @@ simulation_params = {
         NUMBER_OF_BOXES, #default
         1, #min
         20, #max
+        1, #step
+        description="choose how many boxes to include in the simulation",
+    ),
+    "n_obstacles":mesa.visualization.Slider(
+        'number_of_obstacles',
+        NUMBER_OF_OBSTACLES, #default
+        0, #min
+        50, #max
         1, #step
         description="choose how many boxes to include in the simulation",
     )

@@ -9,7 +9,7 @@ from .agents import UNDONE, DONE
 
 class Warehouse(mesa.Model):
     """ Model representing an automated warehouse"""
-    def __init__(self, n_CT_robots, n_boxes, width=50, height=50):
+    def __init__(self, n_CT_robots, n_boxes, n_obstacles, width=50, height=50):
         """
             * Set schedule defining model activation
             * Sets the number of robots as per user input
@@ -17,9 +17,10 @@ class Warehouse(mesa.Model):
             * Create n Robots as required and place them randomly on the edge of the left side of the 2D space.
             * Create m Boxes as required and place them randomly within the model (Hint: To simplify you can place them in the same horizontal position as the Robots). Make sure robots or boxes do not overlap with each other.
         """
-        # TODO implement
+
         self.n_CT_robots = n_CT_robots
         self.n_boxes = n_boxes
+        self.n_obstacles = n_obstacles
         self.grid = mesa.space.MultiGrid(width, height, True)
         y_s = []
         self.schedule = mesa.time.RandomActivation(self)
@@ -35,12 +36,22 @@ class Warehouse(mesa.Model):
         self.schedule.add(chp)
         self.grid.place_agent(wb,(0,0))
 
-        # Place Obstacles
-        #TODO
 
-        # Create LC Agents
+        # Place Obstacles
+        for n in range(self.n_obstacles):
+            while True:
+                x = randint(4,width-1)
+                y = randint(4,width-1)
+                if self.grid.is_cell_empty((x,y)):
+                    break
+            
+            obstacle = Obstacle(n,(x,y),self)
+            self.schedule.add(obstacle)
+            self.grid.place_agent(obstacle,(x,y))
+
+
+        # Create CT Agents
         for n in range(self.n_CT_robots):
-            heading = (1,0)
             #append element in vector
             x = 1
             y = 1
@@ -50,7 +61,7 @@ class Warehouse(mesa.Model):
                     break
             
             y_s.append(y)
-            pr = CT_Robot(n,(x,y),self)
+            pr = CT_Robot(n+self.n_obstacles,(x,y),self)
             self.schedule.add(pr)
             self.grid.place_agent(pr,(x,y))
 
@@ -63,7 +74,7 @@ class Warehouse(mesa.Model):
                 if self.grid.is_cell_empty((x,y)):
                     break
 
-            b = Box(n+self.n_CT_robots,(x,y),self)
+            b = Box(n+self.n_obstacles+self.n_CT_robots,(x,y),self)
             self.schedule.add(b)
             self.grid.place_agent(b,(x,y))
             
