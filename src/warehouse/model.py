@@ -4,12 +4,12 @@ import random
 import numpy as np
 from random import randint
 from warehouse.agents import CT_Robot, Box, WasteBin, ChargingPoint, Obstacle, Debris, LC_Robot
-from .agents import UNDONE, DONE
+from .agents import UNDONE, DONE, NUMBER_OF_CELLS
 
 
 class Warehouse(mesa.Model):
     """ Model representing an automated warehouse"""
-    def __init__(self, n_CT_robots, n_boxes, n_obstacles, n_debris, n_LC_robots, width=50, height=50):
+    def __init__(self, n_CT_robots, n_boxes, n_obstacles, n_debris, n_LC_robots, width=NUMBER_OF_CELLS, height=NUMBER_OF_CELLS):
         """
             * Set schedule defining model activation
             * Sets the number of robots as per user input

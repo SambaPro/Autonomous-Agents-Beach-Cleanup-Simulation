@@ -4,8 +4,8 @@ from warehouse.model import Warehouse
 from .portrayal import warehouse_portrayal
 from .agents import NUMBER_OF_CELLS
 
-SIZE_OF_CANVAS_IN_PIXELS_X = 300
-SIZE_OF_CANVAS_IN_PIXELS_Y = 300
+SIZE_OF_CANVAS_IN_PIXELS_X = 400
+SIZE_OF_CANVAS_IN_PIXELS_Y = 400
 
 LC_NUM = 2
 CT_NUM = 2
