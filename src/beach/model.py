@@ -3,23 +3,15 @@ import mesa
 import random
 import numpy as np
 from random import randint
-from warehouse.agents import CT_Robot, Box, WasteBin, ChargingPoint, Obstacle, Debris, LC_Robot
-from .agents import UNDONE, DONE, NUMBER_OF_CELLS
+from beach.agents import CT_Robot, LargeDebris, WasteBin, ChargingPoint, Obstacle, Debris, LC_Robot
+from .agents import UNDONE, DONE, NUMBER_OF_CELLS, UNDERWAY
 
 
-class Warehouse(mesa.Model):
-    """ Model representing an automated warehouse"""
-    def __init__(self, n_CT_robots, n_boxes, n_obstacles, n_debris, n_LC_robots, width=NUMBER_OF_CELLS, height=NUMBER_OF_CELLS):
-        """
-            * Set schedule defining model activation
-            * Sets the number of robots as per user input
-            * Sets the grid space of the model
-            * Create n Robots as required and place them randomly on the edge of the left side of the 2D space.
-            * Create m Boxes as required and place them randomly within the model (Hint: To simplify you can place them in the same horizontal position as the Robots). Make sure robots or boxes do not overlap with each other.
-        """
-
+class Beach(mesa.Model):
+    """ Model representing a beach full of trash"""
+    def __init__(self, n_CT_robots, n_Ldebris, n_obstacles, n_debris, n_LC_robots, width=NUMBER_OF_CELLS, height=NUMBER_OF_CELLS):
         self.n_CT_robots = n_CT_robots
-        self.n_boxes = n_boxes
+        self.n_Ldebris = n_Ldebris
         self.n_obstacles = n_obstacles
         self.n_debris = n_debris
         self.n_LC_robots = n_LC_robots
@@ -68,15 +60,15 @@ class Warehouse(mesa.Model):
             self.grid.place_agent(pr,(x,y))
 
 
-        # Create Boxes
-        for n in range(self.n_boxes):
+        # Create Large Debris
+        for n in range(self.n_Ldebris):
             while True:
                 x = randint(4,width-1)
                 y = randint(4,width-1)
                 if self.grid.is_cell_empty((x,y)):
                     break
 
-            b = Box(n+self.n_obstacles+self.n_CT_robots,(x,y),self)
+            b = LargeDebris(n+self.n_obstacles+self.n_CT_robots,(x,y),self)
             self.schedule.add(b)
             self.grid.place_agent(b,(x,y))
 
@@ -88,7 +80,7 @@ class Warehouse(mesa.Model):
                 if self.grid.is_cell_empty((x,y)):
                     break
 
-            d = Debris(n+self.n_obstacles+self.n_CT_robots+n_boxes,(x,y),self)
+            d = Debris(n+self.n_obstacles+self.n_CT_robots+n_Ldebris,(x,y),self)
             self.schedule.add(d)
             self.grid.place_agent(d,(x,y))
 
@@ -103,7 +95,7 @@ class Warehouse(mesa.Model):
                     break
             
             y_s.append(y)
-            lc = LC_Robot(n+self.n_obstacles+self.n_CT_robots+n_boxes+n_debris,(x,y),self)
+            lc = LC_Robot(n+self.n_obstacles+self.n_CT_robots+n_Ldebris+n_debris,(x,y),self)
             self.schedule.add(lc)
             self.grid.place_agent(lc,(x,y))
 
@@ -113,15 +105,18 @@ class Warehouse(mesa.Model):
 
     def step(self):
         """
-        * Run while there are Undone boxes, otherwise stop running model.
+        * Run while there are Undone Debris, otherwise stop running model.
         """
-        # Ends if all boxes are done
-        if len([a for a in self.schedule.agents if isinstance(a,Box) and a.state == DONE]) < self.n_boxes:
+        # Ends if all Debris are DONE
+        if len([a for a in self.schedule.agents if isinstance(a,LargeDebris) and (a.state == UNDONE or a.state == UNDERWAY)])  != 0:
+            self.schedule.step()
+        elif len([a for a in self.schedule.agents if isinstance(a,Debris) and (a.state == UNDONE or a.state == UNDERWAY)]) != 0:
             self.schedule.step()
         else:
+            print("Simulation Stopping")
             self.running = False
 
     def run_model(self) -> None:
-        while len([a for a in self.schedule.agents if isinstance(a,Box) and a.state == DONE]) < self.n_boxes and len([a for a in self.schedule.agents if isinstance(a,Debris) and a.state == DONE]) < self.n_debris:
+        while len([a for a in self.schedule.agents if isinstance(a,LargeDebris) and a.state == DONE]) < self.n_Ldebris and len([a for a in self.schedule.agents if isinstance(a,Debris) and a.state == DONE]) < self.n_debris:
             self.step()
         

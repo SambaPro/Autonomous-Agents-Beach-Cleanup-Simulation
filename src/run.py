@@ -1,3 +1,3 @@
-from warehouse.server import server
+from beach.server import server
 
 server.launch()

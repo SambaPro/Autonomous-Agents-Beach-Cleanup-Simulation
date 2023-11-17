@@ -6,17 +6,18 @@ import math
 """ Beach Parameters"""
 NUMBER_OF_CELLS = 50
 n = 0
-n_segments = 10           # Must be large otherwise agents may miss areas/debris
-explored_segments = []    # Makes it more likely that unexplored segments will be targeted
+n_segments = 10              # Must be large otherwise agents may miss areas/debris
+CT_explored_segments = []    # Makes it more likely that unexplored segments will be targeted
+LC_explored_segments = []
 
 """ Agent States """
-FREE = 0              # Idle (Default State)
+IDLE = 0              # Idle (Default State)
 EXPLORING = 1         # Exploring in random direction and magnitude
 EMPTYING = 2          # Moving towards wastebin / Emptying cargo
 CHARGING = 3          # Moving towards charging point/ Waiting to be fully charged
 PICKING = 4           # Moving to target
 
-""" Box States """
+""" Debris States """
 UNDONE = 0
 UNDERWAY = 2
 DONE = 1
@@ -34,19 +35,13 @@ MIN_CHARGE = 100     # When agent reaches this charge level, they will return to
 CHARGING_SPEED = 50  # Charge restored each step once at charging station
 
 # LC Parameters
-LC_MAX_PAYLOAD = 5
+LC_MAX_PAYLOAD = 10
 LC_SPEED = 3
 
 
 class CT_Robot(mesa.Agent):
-    """Represents a Robot of the warehouse."""
-    def __init__(self, id, pos, model, max_payload=CR_MAX_PAYLOAD, speed=CR_SPEED, init_state=FREE):
-        """
-        Initialise state attributes, including:
-          * current and next position of the robot
-          * state (FREE/BUSY)
-          * payload (id of any box the robot is carrying)
-        """
+    """Represents a CT Robot on the beach."""
+    def __init__(self, id, pos, model, max_payload=CR_MAX_PAYLOAD, speed=CR_SPEED, init_state=IDLE):
         super().__init__(id, model)
         self.x, self.y = pos
         self.next_x, self.next_y = None, None
@@ -64,7 +59,6 @@ class CT_Robot(mesa.Agent):
     @property
     def atChargingPoint(self):
         chp = [a for a in self.model.schedule.agents if isinstance(a,ChargingPoint)]
-        #print("Charging point is at", chp[0].x, chp[0].y, "Robot is at", self.x, self.y)
         return (self.x == chp[0].x and self.y == chp[0].y)
     
     @property
@@ -80,9 +74,9 @@ class CT_Robot(mesa.Agent):
         wb = [a for a in self.model.schedule.agents if isinstance(a,WasteBin)]
         self.target = (wb[0].x, wb[0].y, wb[0].unique_id)
 
-    def BoxesLeft(self):
-        boxes = [a for a in self.model.schedule.agents if (isinstance(a,Box) and (a.state == UNDONE or self.state == UNDERWAY))]
-        return len(boxes) != 0
+    def LargeDebrisLeft(self):
+        ld = [a for a in self.model.schedule.agents if (isinstance(a,LargeDebris) and (a.state == UNDONE or self.state == UNDERWAY))]
+        return len(ld) != 0
 
 
     def step(self):
@@ -106,22 +100,15 @@ class CT_Robot(mesa.Agent):
         print("CT", self.unique_id, "payload is:", len(self.payload))
         print("Payload contains", self.payload)
 
-        # When all boxes are busy
-        action = "wait"
-        if not self.BoxesLeft() and self.payload and self.state == FREE:
-            print("there are no boxes left to do")
-            print("Moving Payload to waste bin")
-            action = "move_to_bin"
-            self.state = EMPTYING
-            return action
-        
-        elif not self.BoxesLeft() and self.state == FREE:
-            print("there are no boxes left to do")
-            self.state = CHARGING
-            action = "goto_charging_station"
-            return action
+        ld  = [a for a in self.model.schedule.agents if (isinstance(a,LargeDebris) and (a.state == UNDONE or self.state == UNDERWAY))]
+        print("Large Debris left", len(ld))
+        d  = [a for a in self.model.schedule.agents if (isinstance(a,Debris) and (a.state == UNDONE or self.state == UNDERWAY))]
+        print("Large Debris left", len(d))
 
-        elif self.state == EXPLORING:
+        # Default action (End)
+        action = "wait"
+
+        if self.state == EXPLORING:
             if not self.target:
                 self.set_explore_target()
             elif self.x == self.target[0] and self.y == self.target[1]:
@@ -137,7 +124,7 @@ class CT_Robot(mesa.Agent):
 
         elif self.state == CHARGING:
             if self.charge >= MAX_CHARGE:
-                self.state = FREE
+                self.state = IDLE
                 self.charge = MAX_CHARGE
 
             elif self.atChargingPoint:
@@ -158,14 +145,28 @@ class CT_Robot(mesa.Agent):
                 print("moving towards waste bin")
                 action = "move_fw"
 
-        elif self.state == FREE:
+        elif self.state == IDLE:
+            # If all LargeDebris are done
+            if not self.LargeDebrisLeft() and self.payload:
+                print("there are no LargeDebris left to do")
+                print("Moving Payload to waste bin")
+                action = "move_to_bin"
+                self.state = EMPTYING
+                return action
+        
+            elif not self.LargeDebrisLeft():
+                print("there are no LargeDebris left to do")
+                self.state = CHARGING
+                action = "goto_charging_station"
+                return action
+            
             if self.charge < 100:
                 print("moving to charging point")
                 action = "goto_charging_station"
             elif len(self.payload) > self.max_payload:
                 print("moving to bin")
                 action = "move_to_bin"
-            elif self.BoxesLeft():
+            elif self.LargeDebrisLeft():
                 print("Robot is now exploring")
                 self.state = EXPLORING
             else:
@@ -180,12 +181,14 @@ class CT_Robot(mesa.Agent):
                 action = "move_fw"
         else:
             print("Robot is now returning to charging station")
-            action = "goto_charging_station" # Return to base
+            action = "goto_charging_station"
         return action
 
+    # Robot actions
     def set_explore_target(self):
         """
-        Splits map into segments and sets the target to segment centre
+        * Splits map into segments and sets the target to random segment centre
+        * Keeps track of explored segments so they are not explored again
         """
         while True:
             x_segment = random.randint(1, n_segments)
@@ -197,39 +200,39 @@ class CT_Robot(mesa.Agent):
             if self.containsObstacle(x,y):
                 print("cell contains obstacle, finding new one")
                 continue
-            if (x,y) in explored_segments:
-                if len(explored_segments) > 0.75* n_segments**2:
-                    explored_segments.clear()
+            if (x,y) in CT_explored_segments:
+                # if more than 90% of segments have been explored, reset explored segments
+                if len(CT_explored_segments) > 0.9* n_segments**2:
+                    CT_explored_segments.clear()
                 print("CT segment already explored")
                 continue
+
             print("Exploring around cell", x, y)
-            explored_segments.append((x,y))
+            CT_explored_segments.append((x,y))
             self.target = (x, y)
             break
 
-    # Robot actions
     def find_target(self):
         """
-        Finds box within area and sets it as target.
-        If no box found, continue exploring.
+        Finds Large Debris within area and sets it as target.
+        If no Large Debris found, continue exploring.
         """
-        boxes = [a for a in self.model.schedule.agents if (isinstance(a,Box) and (a.unique_id not in self.payload) and a.state == UNDONE)]
+        debris = [a for a in self.model.schedule.agents if (isinstance(a,LargeDebris) and (a.unique_id not in self.payload) and a.state == UNDONE)]
 
-        if boxes == []:
+        if debris == []:
             print("No Target Found")
-            self.state = FREE
+            self.state = IDLE
             return False
 
-        # Get closes box
-        closest_box = boxes[0]
-        for box in boxes:
-            if self.get_distance(box) < self.get_distance(closest_box):
-                closest_box = box
-                #print("closest box is at", closest_box.x, closest_box.y) 
+        # Get closes Large Debris
+        closest_debris = debris[0]
+        for ld in debris:
+            if self.get_distance(ld) < self.get_distance(closest_debris):
+                closest_debris = ld
 
-        if self.get_distance(closest_box) <= SCAN_RANGE:
-            closest_box.state = UNDERWAY
-            self.target = (closest_box.x, closest_box.y, closest_box.unique_id)
+        if self.get_distance(closest_debris) <= SCAN_RANGE:
+            closest_debris.state = UNDERWAY
+            self.target = (closest_debris.x, closest_debris.y, closest_debris.unique_id)
             self.state = PICKING
             return True
         else:
@@ -267,12 +270,12 @@ class CT_Robot(mesa.Agent):
 
     def move_payload(self):
         """
-        * Obtains the box whose id is in the payload (Hint: you can use the method: self.model.schedule.agents to iterate over existing agents.)
+        * Obtains the Large Debris whose id is in the payload
         * move the payload together with the robot
         """
-        boxes = [a for a in self.model.schedule.agents if isinstance(a,Box) and a.unique_id in self.payload]
-        for box in boxes:
-            self.model.grid.move_agent(box,(self.x,self.y))
+        debris = [a for a in self.model.schedule.agents if isinstance(a,LargeDebris) and a.unique_id in self.payload]
+        for ld in debris:
+            self.model.grid.move_agent(ld,(self.x,self.y))
 
 
     def wait(self):
@@ -289,7 +292,7 @@ class CT_Robot(mesa.Agent):
         y_dif = abs(self.y - self.target[1])
 
         if x_dif == 0 and y_dif == 0:
-            self.state = FREE
+            self.state = IDLE
 
         if (x_dif > self.speed) and (self.target[0] > self.x):
             self.next_x = self.x + self.speed
@@ -341,12 +344,12 @@ class CT_Robot(mesa.Agent):
         
     def pick(self):
         """
-        * change robot state to Busy if overloaded
-        * find out the id of the box next to the robot
-        * store the box id in the payload of the robot
+        * find out the id of the Large Debris next to the robot
+        * store the Large Debris id in the payload of the robot
+        * set state to EMPTYING if max payload is met or IDLE
         """
-        box = [a for a in self.model.schedule.agents if isinstance(a,Box) and a.unique_id==self.target[2]]
-        box[0].state = UNDERWAY
+        debris = [a for a in self.model.schedule.agents if isinstance(a,LargeDebris) and a.unique_id==self.target[2]]
+        debris[0].state = UNDERWAY
         self.payload.append(self.target[2])
 
         # If maximum payload is exceeded set target to waste bin
@@ -357,21 +360,21 @@ class CT_Robot(mesa.Agent):
             print("Heading towards waste bin at", self.target[0], self.target[1])
         else:
             self.target = None
-            self.state = FREE
+            self.state = IDLE
     
     def drop_off(self):
         """
-        * change state of the robot to Free
-        * Get the Box whose id is in the payload and remove it from the grid and change its state to Done.
+        * change state of the robot to IDLE
+        * Get the Large Debris whose id is in the payload and remove it from the grid and change its state to Done.
         * Remove payload from robot
         """
-        self.state = FREE
-        boxes = [a for a in self.model.schedule.agents if isinstance(a,Box) and a.unique_id in self.payload]
+        self.state = IDLE
+        debris = [a for a in self.model.schedule.agents if isinstance(a,LargeDebris) and a.unique_id in self.payload]
         
-        print("Removing Box/s from game")
-        for box in boxes:
-            box.state = DONE
-            self.model.grid.remove_agent(box)
+        print("Removing Debris/s from game")
+        for ld in debris:
+            ld.state = DONE
+            self.model.grid.remove_agent(ld)
         
         self.payload = []
         self.target = None
@@ -384,11 +387,11 @@ class CT_Robot(mesa.Agent):
        self.x = self.next_x
        self.y = self.next_y
 
-    def get_distance(self, box):
+    def get_distance(self, debris):
         """
-        Uses the manhattan distance for simplification.
+        Uses manhattan distance for simplification.
         """
-        return abs(self.x - box.x) + abs(self.y - box.y)
+        return abs(self.x - debris.x) + abs(self.y - debris.y)
     
     def containsObstacle(self, x,y):
         obstacles = [a for a in self.model.schedule.agents if isinstance(a,Obstacle) and a.x == x and a.y == y]
@@ -398,14 +401,8 @@ class CT_Robot(mesa.Agent):
             return False
     
 class LC_Robot(mesa.Agent):
-    """Represents a Robot of the warehouse."""
-    def __init__(self, id, pos, model, max_payload=LC_MAX_PAYLOAD, speed=LC_SPEED, init_state=FREE):
-        """
-        Initialise state attributes, including:
-          * current and next position of the robot
-          * state (FREE/BUSY)
-          * payload (id of any box the robot is carrying)
-        """
+    """Represents a LC Robot on the beach."""
+    def __init__(self, id, pos, model, max_payload=LC_MAX_PAYLOAD, speed=LC_SPEED, init_state=IDLE):
         super().__init__(id, model)
         self.x, self.y = pos
         self.next_x, self.next_y = None, None
@@ -423,7 +420,6 @@ class LC_Robot(mesa.Agent):
     @property
     def atChargingPoint(self):
         chp = [a for a in self.model.schedule.agents if isinstance(a,ChargingPoint)]
-        #print("Charging point is at", chp[0].x, chp[0].y, "Robot is at", self.x, self.y)
         return (self.x == chp[0].x and self.y == chp[0].y)
     
     @property
@@ -463,18 +459,10 @@ class LC_Robot(mesa.Agent):
             print("LC", self.unique_id, "target is at:", self.target[0], self.target[1])
         print("Payload is", self.payload)
 
-        # When all boxes are busy
+        # Default action (End)
         action = "wait"
-        if not self.DebrisLeft() and self.state == FREE:
-            print("there are no boxes left to do")
-            return action
-        elif not self.DebrisLeft() and self.payload and self.state == FREE:
-            print("there are no boxes left to do")
-            print("Moving Payload to waste bin")
-            action = "move_to_bin"
-            return action
 
-        elif self.state == EXPLORING:
+        if self.state == EXPLORING:
             if not self.target or self.x == self.target[0] and self.y == self.target[1]:
                 self.set_explore_target()
 
@@ -491,7 +479,18 @@ class LC_Robot(mesa.Agent):
                 print("moving towards waste bin")
                 action = "move_fw"
 
-        elif self.state == FREE:
+        elif self.state == IDLE:
+            # If no debris left
+            if not self.DebrisLeft():
+                print("there are no debris left to do")
+                return action
+            
+            elif not self.DebrisLeft() and self.payload:
+                print("there are no debris left to do")
+                print("Moving Payload to waste bin")
+                action = "move_to_bin"
+                return action
+            
             if self.payload >= self.max_payload:
                 print("moving to bin")
                 action = "move_to_bin"
@@ -499,7 +498,7 @@ class LC_Robot(mesa.Agent):
                 print("Robot is now exploring")
                 self.state = EXPLORING
             else:
-                self.state = FREE
+                self.state = IDLE
 
         elif self.state == PICKING:
             if (self.x == self.target[0]) and (self.y == self.target[1]):
@@ -517,7 +516,7 @@ class LC_Robot(mesa.Agent):
     # Robot actions
     def set_explore_target(self):
         """
-        Splits map into segments and sets the target to segment centre
+        * Splits map into segments and sets the target to random segment centre
         """
         while True:
             x_segment = random.randint(1, n_segments)
@@ -529,25 +528,29 @@ class LC_Robot(mesa.Agent):
             if self.containsObstacle(x,y):
                 print("cell contains obstacle, finding new one")
                 continue
-            #if (x,y) in explored_segments:
-            #    print("LC segment already explored")
-            #    continue
+            if (x,y) in LC_explored_segments:
+                # if more than 90% of segments have been explored, reset explored segments
+                if len(LC_explored_segments) > 0.9* n_segments**2:
+                    LC_explored_segments.clear()
+                print("LC segment already explored")
+                continue
+
             print("Exploring around cell", x, y)
-            explored_segments.append((x,y))
+            LC_explored_segments.append((x,y))
             self.target = (x, y)
             break
 
     # Robot actions
     def find_target(self):
         """
-        Finds box within area and sets it as target.
-        If no box found, continue exploring.
+        Finds Debris within area and sets it as target.
+        If no Debris found, continue exploring.
         """
         debris = [a for a in self.model.schedule.agents if (isinstance(a,Debris) and a.state == UNDONE)]
 
         if debris == []:
             print("No Target Found")
-            self.state = FREE
+            self.state = IDLE
             return False
 
         # Get closes debris
@@ -555,7 +558,6 @@ class LC_Robot(mesa.Agent):
         for d in debris:
             if self.get_distance(d) < self.get_distance(closest_debris):
                 closest_debris = d
-                #print("closest box is at", closest_box.x, closest_box.y) 
 
         if self.get_distance(closest_debris) <= SCAN_RANGE:
             closest_debris.state = UNDERWAY
@@ -567,6 +569,9 @@ class LC_Robot(mesa.Agent):
 
 
     def move_to_bin(self):
+        """
+        Set target to bin
+        """
         self.state = EMPTYING
         bin = [a for a in self.model.schedule.agents if isinstance(a,WasteBin)]
         self.target = (bin[0].x, bin[0].y, bin[0].unique_id)
@@ -595,7 +600,7 @@ class LC_Robot(mesa.Agent):
         y_dif = abs(self.y - self.target[1])
 
         if x_dif == 0 and y_dif == 0:
-            self.state = FREE
+            self.state = IDLE
 
         if (x_dif > self.speed) and (self.target[0] > self.x):
             self.next_x = self.x + self.speed
@@ -646,15 +651,21 @@ class LC_Robot(mesa.Agent):
         
     def pick(self):
         """
-        * change robot state to Busy if overloaded
-        * find out the id of the box next to the robot
-        * store the box id in the payload of the robot
+        * change robot state to EMPTYING if overloaded
+        * find out the id of the Debris next to the robot
+        * Remove Debris from game
+        * Add 1 to payload
+        * If payload exceeds 50%, decrease speed
         """
         debris = [a for a in self.model.schedule.agents if isinstance(a,Debris) and a.unique_id==self.target[2]]
         self.payload += 1
+        debris[0].state = DONE
         self.model.grid.remove_agent(debris[0])
 
-        self.state = FREE
+        self.state = IDLE
+
+        if self.payload >= 0.5*self.max_payload:
+            self.speed = math.ceil(self.speed/2)
 
         # If maximum payload is exceeded set target to waste bin
         if self.payload >= self.max_payload:
@@ -664,19 +675,21 @@ class LC_Robot(mesa.Agent):
             print("Heading towards waste bin at", self.target[0], self.target[1])
         else:
             self.target = None
-            self.state = FREE
+            self.state = IDLE
     
     def drop_off(self):
         """
-        * change state of the robot to Free
-        * Get the Box whose id is in the payload and remove it from the grid and change its state to Done.
-        * Remove payload from robot
+        * change state of the robot to IDLE
+        * Set payload to 0
+        * Remove target
+        * Restore max speed
         """
-        self.state = FREE
+        self.state = IDLE
                
         print("Emptying Cargo")
         self.payload = 0
         self.target = None
+        self.speed = LC_SPEED
         self.move()
    
     def advance(self):
@@ -686,11 +699,11 @@ class LC_Robot(mesa.Agent):
        self.x = self.next_x
        self.y = self.next_y
 
-    def get_distance(self, box):
+    def get_distance(self, debris):
         """
         Uses the manhattan distance for simplification.
         """
-        return abs(self.x - box.x) + abs(self.y - box.y)
+        return abs(self.x - debris.x) + abs(self.y - debris.y)
     
     def containsObstacle(self, x,y):
         obstacles = [a for a in self.model.schedule.agents if isinstance(a,Obstacle) and a.x == x and a.y == y]
@@ -699,21 +712,21 @@ class LC_Robot(mesa.Agent):
         else: 
             return False
 
-class Box(mesa.Agent):
-    """Represents a Box in the warehouse."""
+class LargeDebris(mesa.Agent):
+    """Represents a large piece of debris on the beach."""
     def __init__(self, id, pos, model, init_state=UNDONE):
         """
-        Intialise state and position of the box
+        Intialise state and position of the Debris
         """
         super().__init__(id, model)
         self.state = UNDONE
         self.x, self.y = pos
 
 class Debris(mesa.Agent):
-    """Represents patch of sand containing debris in the warehouse."""
+    """Represents patch of sand containing small debris on the beach."""
     def __init__(self, id, pos, model, init_state=UNDONE):
         """
-        Intialise state and position of the box
+        Intialise state and position of the Debris
         """
         super().__init__(id, model)
         self.state = UNDONE
@@ -723,25 +736,25 @@ class WasteBin(mesa.Agent):
     """Represents a Waste Bin where robots deposit waste."""
     def __init__(self, id, pos, model, init_state=UNDONE):
         """
-        Intialise state and position of the box
+        Intialise state and position of the Waste Bin
         """
         super().__init__(id, model)
         self.x, self.y = pos
 
 class ChargingPoint(mesa.Agent):
-    """Represents a Waste Bin where robots deposit waste."""
+    """Represents a Charging Point where CT robots recharge."""
     def __init__(self, id, pos, model, init_state=UNDONE):
         """
-        Intialise state and position of the box
+        Intialise state and position of the Charging Station
         """
         super().__init__(id, model)
         self.x, self.y = pos
 
 class Obstacle(mesa.Agent):
-    """Represents a Waste Bin where robots deposit waste."""
+    """Represents an Obstacle where robots cannot move to."""
     def __init__(self, id, pos, model, init_state=UNDONE):
         """
-        Intialise state and position of the box
+        Intialise state and position of the Obstacle
         """
         super().__init__(id, model)
         self.x, self.y = pos

@@ -1,13 +1,13 @@
-from warehouse.agents import CT_Robot
-from warehouse.agents import LC_Robot
-from warehouse.agents import Box
-from warehouse.agents import WasteBin
-from warehouse.agents import ChargingPoint
-from warehouse.agents import Obstacle
-from warehouse.agents import Debris
+from beach.agents import CT_Robot
+from beach.agents import LC_Robot
+from beach.agents import LargeDebris
+from beach.agents import WasteBin
+from beach.agents import ChargingPoint
+from beach.agents import Obstacle
+from beach.agents import Debris
 
 
-def warehouse_portrayal(agent):
+def beach_portrayal(agent):
    """
    Determine which portrayal to use according to the type of agent.
    """
@@ -25,7 +25,7 @@ def warehouse_portrayal(agent):
        return debris_portrayal(agent)
        
    else:
-        return box_portrayal(agent)
+        return LDebris_portrayal(agent)
 
 def CT_portrayal(CT):
     if CT is None:
@@ -63,9 +63,9 @@ def LC_portrayal(LC):
         "Color": "orange" if LC.isBusy else "blue",
     }
 
-def box_portrayal(box):
+def LDebris_portrayal(ld):
 
-    if box is None:
+    if ld is None:
         raise AssertionError
     return {
         "Shape": "rect",
@@ -73,8 +73,8 @@ def box_portrayal(box):
         "h": 1,
         "Filled": "true",
         "Layer": 0,
-        "x": box.x,
-        "y": box.y,
+        "x": ld.x,
+        "y": ld.y,
         "Color": "blue",
     }
 
