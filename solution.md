@@ -20,3 +20,4 @@ To start the simulation press Start at the top right corner.
 
 
 # Activity 3
+Activity 3 can be viewed in Activity 3.pdf
