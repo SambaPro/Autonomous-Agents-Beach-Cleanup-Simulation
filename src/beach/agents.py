@@ -3,6 +3,9 @@ import mesa
 import random
 import math
 
+""" Extended Features from Assignment 2 """
+EXTENDED = True
+
 """ Beach Parameters"""
 NUMBER_OF_CELLS = 50
 n = 0
@@ -31,7 +34,7 @@ CR_MAX_PAYLOAD = 3
 CR_SPEED = 1
 NEEDS_CHARGE = True
 MAX_CHARGE = 300     # Maximum and starting charge, will decrease by 1 for each tile traversed
-MIN_CHARGE = 100     # When agent reaches this charge level, they will return to charging station
+MIN_CHARGE = 20      # Reserve charge when determining when to returning to charging station 
 CHARGING_SPEED = 50  # Charge restored each step once at charging station
 
 # LC Parameters
@@ -50,7 +53,9 @@ class CT_Robot(mesa.Agent):
         self.max_payload = max_payload
         self.speed = speed
         self.target = None # (x,y,unique_id)
-        self.charge = MAX_CHARGE
+        self.reserve_target = None # Used to reserve target incase agent must return to charging station
+        self.charge = random.randint(MAX_CHARGE/2, MAX_CHARGE) #CTs start with 50% to 100% charge
+        self.chp_distance = self.get_chp_distance()
 
     @property
     def isBusy(self):
@@ -66,6 +71,11 @@ class CT_Robot(mesa.Agent):
         wb = [a for a in self.model.schedule.agents if isinstance(a,WasteBin)]
         return self.x == wb[0].x and self.y == wb[0]
     
+    @property
+    def must_return(self):
+        return self.chp_distance + MIN_CHARGE >= self.charge
+
+    
     def targetChargingPoint(self):
         chp = [a for a in self.model.schedule.agents if isinstance(a,ChargingPoint)]
         self.target = (chp[0].x, chp[0].y, chp[0].unique_id)
@@ -77,7 +87,11 @@ class CT_Robot(mesa.Agent):
     def LargeDebrisLeft(self):
         ld = [a for a in self.model.schedule.agents if (isinstance(a,LargeDebris) and (a.state == UNDONE or self.state == UNDERWAY))]
         return len(ld) != 0
-
+    
+    def hold_target(self):
+        print("Holding Target")
+        self.reserve_target = self.target
+        self.target = None
 
     def step(self):
         """
@@ -99,23 +113,31 @@ class CT_Robot(mesa.Agent):
             print("CT", self.unique_id, "target is at:", self.target[0], self.target[1])
         print("CT", self.unique_id, "payload is:", len(self.payload))
         print("Payload contains", self.payload)
+        print("CT", self.unique_id, "charge is:", self.charge)
+        print("Distance to charging station is:", self.chp_distance)
 
-        ld  = [a for a in self.model.schedule.agents if (isinstance(a,LargeDebris) and (a.state == UNDONE or self.state == UNDERWAY))]
-        print("Large Debris left", len(ld))
-        d  = [a for a in self.model.schedule.agents if (isinstance(a,Debris) and (a.state == UNDONE or self.state == UNDERWAY))]
-        print("Large Debris left", len(d))
+        #ld  = [a for a in self.model.schedule.agents if (isinstance(a,LargeDebris) and (a.state == UNDONE or self.state == UNDERWAY))]
+        #print("Large Debris left", len(ld))
+        #d  = [a for a in self.model.schedule.agents if (isinstance(a,Debris) and (a.state == UNDONE or self.state == UNDERWAY))]
+        #print("Large Debris left", len(d))
+
+        # Assertions
+        assert(self.charge >= 0)
 
         # Default action (End)
         action = "wait"
+
+        # Check if CT needs to return to charging station
+        if self.must_return and self.state != CHARGING:
+                print("CT returning to charging station, reserving target")
+                self.hold_target()
+                self.state = CHARGING
 
         if self.state == EXPLORING:
             if not self.target:
                 self.set_explore_target()
             elif self.x == self.target[0] and self.y == self.target[1]:
-                if self.charge < MIN_CHARGE:
-                    self.state = CHARGING
-                else:
-                    self.set_explore_target()
+                self.set_explore_target()
 
             if self.find_target(): # Target within range
                 self.state = PICKING
@@ -146,8 +168,15 @@ class CT_Robot(mesa.Agent):
                 action = "move_fw"
 
         elif self.state == IDLE:
+            if self.reserve_target:
+                print("Continuing with target")
+                self.target = self.reserve_target
+                self.reserve_target = None
+                action = "move_fw"
+                return action
+
             # If all LargeDebris are done
-            if not self.LargeDebrisLeft() and self.payload:
+            elif not self.LargeDebrisLeft() and self.payload:
                 print("there are no LargeDebris left to do")
                 print("Moving Payload to waste bin")
                 action = "move_to_bin"
@@ -160,15 +189,14 @@ class CT_Robot(mesa.Agent):
                 action = "goto_charging_station"
                 return action
             
-            if self.charge < 100:
-                print("moving to charging point")
-                action = "goto_charging_station"
-            elif len(self.payload) > self.max_payload:
+            elif len(self.payload) >= self.max_payload:
                 print("moving to bin")
                 action = "move_to_bin"
+
             elif self.LargeDebrisLeft():
                 print("Robot is now exploring")
                 self.state = EXPLORING
+
             else:
                 self.state = CHARGING
 
@@ -198,13 +226,13 @@ class CT_Robot(mesa.Agent):
             y = math.floor(y_segment*NUMBER_OF_CELLS/(n_segments))-1
 
             if self.containsObstacle(x,y):
-                print("cell contains obstacle, finding new one")
+                #print("cell contains obstacle, finding new one")
                 continue
             if (x,y) in CT_explored_segments:
                 # if more than 90% of segments have been explored, reset explored segments
                 if len(CT_explored_segments) > 0.9* n_segments**2:
                     CT_explored_segments.clear()
-                print("CT segment already explored")
+                #print("CT segment already explored")
                 continue
 
             print("Exploring around cell", x, y)
@@ -262,9 +290,11 @@ class CT_Robot(mesa.Agent):
 
         if NEEDS_CHARGE:
             self.charge -= cells_moved
-        print("CT",self.unique_id, "charge is now",self.charge)
 
-        if self.charge < MIN_CHARGE and not self.target:
+        # Update recorded distance to charging point
+        self.chp_distance = self.get_chp_distance()
+
+        if self.must_return:
             self.state = CHARGING
 
 
@@ -387,11 +417,11 @@ class CT_Robot(mesa.Agent):
        self.x = self.next_x
        self.y = self.next_y
 
-    def get_distance(self, debris):
+    def get_distance(self, item):
         """
         Uses manhattan distance for simplification.
         """
-        return abs(self.x - debris.x) + abs(self.y - debris.y)
+        return abs(self.x - item.x) + abs(self.y - item.y)
     
     def containsObstacle(self, x,y):
         obstacles = [a for a in self.model.schedule.agents if isinstance(a,Obstacle) and a.x == x and a.y == y]
@@ -399,6 +429,11 @@ class CT_Robot(mesa.Agent):
             return True
         else: 
             return False
+        
+    def get_chp_distance(self):
+        chp = [a for a in self.model.schedule.agents if isinstance(a,ChargingPoint)]
+        return self.get_distance(chp[0])
+        
     
 class LC_Robot(mesa.Agent):
     """Represents a LC Robot on the beach."""
