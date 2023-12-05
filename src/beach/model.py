@@ -4,7 +4,7 @@ import random
 import numpy as np
 from random import randint
 from beach.agents import CT_Robot, LargeDebris, WasteBin, ChargingPoint, Obstacle, Debris, LC_Robot
-from .agents import UNDONE, DONE, NUMBER_OF_CELLS, UNDERWAY
+from .agents import UNDONE, DONE, NUMBER_OF_CELLS, UNDERWAY, NEW_DEBRIS_CHANCE, EXTENDED
 
 
 class Beach(mesa.Model):
@@ -18,6 +18,7 @@ class Beach(mesa.Model):
         self.grid = mesa.space.MultiGrid(width, height, True)
         y_s = []
         self.schedule = mesa.time.RandomActivation(self)
+        self.x = 10000
 
         # Place Charger and Wastebin
         x = 49
@@ -115,6 +116,25 @@ class Beach(mesa.Model):
         else:
             print("Simulation Stopping")
             self.running = False
+        
+               
+        # Chance to add new Large Debris to beach
+        if EXTENDED:
+            num = random.random()
+            if num < NEW_DEBRIS_CHANCE:
+                while True:
+                    x = randint(4, NUMBER_OF_CELLS-1)
+                    y = randint(4, NUMBER_OF_CELLS-1)
+                    if self.grid.is_cell_empty((x,y)):
+                        break
+
+                d = LargeDebris(self.x,(x,y),self)
+                self.x =self.x + 1
+                self.schedule.add(d)
+                self.grid.place_agent(d,(x,y))
+
+
+
 
     def run_model(self) -> None:
         while len([a for a in self.schedule.agents if isinstance(a,LargeDebris) and a.state == DONE]) < self.n_Ldebris and len([a for a in self.schedule.agents if isinstance(a,Debris) and a.state == DONE]) < self.n_debris:

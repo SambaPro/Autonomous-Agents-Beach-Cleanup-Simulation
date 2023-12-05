@@ -5,6 +5,7 @@ import math
 
 """ Extended Features from Assignment 2 """
 EXTENDED = True
+NEW_DEBRIS_CHANCE = 0.01  # Chance to add new debris to beach 
 
 """ Beach Parameters"""
 NUMBER_OF_CELLS = 50
@@ -116,19 +117,20 @@ class CT_Robot(mesa.Agent):
         print("CT", self.unique_id, "charge is:", self.charge)
         print("Distance to charging station is:", self.chp_distance)
 
-        #ld  = [a for a in self.model.schedule.agents if (isinstance(a,LargeDebris) and (a.state == UNDONE or self.state == UNDERWAY))]
-        #print("Large Debris left", len(ld))
-        #d  = [a for a in self.model.schedule.agents if (isinstance(a,Debris) and (a.state == UNDONE or self.state == UNDERWAY))]
-        #print("Large Debris left", len(d))
+        ld  = [a for a in self.model.schedule.agents if (isinstance(a,LargeDebris) and (a.state == UNDONE or self.state == UNDERWAY))]
+        print("Large Debris left", len(ld))
+        d  = [a for a in self.model.schedule.agents if (isinstance(a,Debris) and (a.state == UNDONE or self.state == UNDERWAY))]
+        print("Large Debris left", len(d))
 
         # Assertions
         assert(self.charge >= 0)
+
 
         # Default action (End)
         action = "wait"
 
         # Check if CT needs to return to charging station
-        if self.must_return and self.state != CHARGING:
+        if self.must_return and self.state != CHARGING and self.state != PICKING:
                 print("CT returning to charging station, reserving target")
                 self.hold_target()
                 self.state = CHARGING
