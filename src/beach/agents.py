@@ -4,7 +4,6 @@ import random
 import math
 
 """ Extended Features from Assignment 2 """
-EXTENDED = True
 NEW_DEBRIS_CHANCE = 0.01  # Chance to add new debris to beach 
 
 """ Beach Parameters"""

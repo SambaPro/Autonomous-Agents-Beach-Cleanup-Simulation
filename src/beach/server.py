@@ -7,6 +7,7 @@ from .agents import NUMBER_OF_CELLS
 SIZE_OF_CANVAS_IN_PIXELS_X = 400
 SIZE_OF_CANVAS_IN_PIXELS_Y = 400
 
+EXTENDED = 1 
 LC_NUM = 2
 CT_NUM = 2
 NUMBER_OF_LARGE_DEBRIS = 8
@@ -55,6 +56,10 @@ simulation_params = {
         10, #max
         1, #step
         description="choose how many LC robots to include in the simulation",
+    ),
+    "EXTENDED":mesa.visualization.Checkbox(
+        'Extended_Features',
+        True #default
     )
 }
 grid = mesa.visualization.CanvasGrid(beach_portrayal, NUMBER_OF_CELLS, NUMBER_OF_CELLS, SIZE_OF_CANVAS_IN_PIXELS_X, SIZE_OF_CANVAS_IN_PIXELS_Y)

@@ -4,12 +4,12 @@ import random
 import numpy as np
 from random import randint
 from beach.agents import CT_Robot, LargeDebris, WasteBin, ChargingPoint, Obstacle, Debris, LC_Robot
-from .agents import UNDONE, DONE, NUMBER_OF_CELLS, UNDERWAY, NEW_DEBRIS_CHANCE, EXTENDED
+from .agents import UNDONE, DONE, NUMBER_OF_CELLS, UNDERWAY, NEW_DEBRIS_CHANCE
 
 
 class Beach(mesa.Model):
     """ Model representing a beach full of trash"""
-    def __init__(self, n_CT_robots, n_Ldebris, n_obstacles, n_debris, n_LC_robots, width=NUMBER_OF_CELLS, height=NUMBER_OF_CELLS):
+    def __init__(self, n_CT_robots, n_Ldebris, n_obstacles, n_debris, n_LC_robots, EXTENDED,width=NUMBER_OF_CELLS, height=NUMBER_OF_CELLS):
         self.n_CT_robots = n_CT_robots
         self.n_Ldebris = n_Ldebris
         self.n_obstacles = n_obstacles
@@ -18,6 +18,7 @@ class Beach(mesa.Model):
         self.grid = mesa.space.MultiGrid(width, height, True)
         y_s = []
         self.schedule = mesa.time.RandomActivation(self)
+        self.EXTENDED = EXTENDED
         self.x = 10000
 
         # Place Charger and Wastebin
@@ -119,7 +120,7 @@ class Beach(mesa.Model):
         
                
         # Chance to add new Large Debris to beach
-        if EXTENDED:
+        if self.EXTENDED:
             num = random.random()
             if num < NEW_DEBRIS_CHANCE:
                 while True:
