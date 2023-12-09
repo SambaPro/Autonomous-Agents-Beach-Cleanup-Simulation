@@ -54,6 +54,7 @@ class CT_Robot(mesa.Agent):
         self.speed = speed
         self.target = None # (x,y,unique_id)
         self.reserve_target = None # Used to reserve target incase agent must return to charging station
+        self.reserve_state = None
         self.charge = random.randint(MAX_CHARGE/2, MAX_CHARGE) #CTs start with 50% to 100% charge
         self.chp_distance = self.get_chp_distance()
 
@@ -77,14 +78,10 @@ class CT_Robot(mesa.Agent):
 
     
     def targetChargingPoint(self):
-        if self.target:
-            self.hold_target()
         chp = [a for a in self.model.schedule.agents if isinstance(a,ChargingPoint)]
         self.target = (chp[0].x, chp[0].y, chp[0].unique_id)
 
     def targetWasteBin(self):
-        if self.target:
-            self.hold_target()
         wb = [a for a in self.model.schedule.agents if isinstance(a,WasteBin)]
         self.target = (wb[0].x, wb[0].y, wb[0].unique_id)
 
@@ -94,8 +91,26 @@ class CT_Robot(mesa.Agent):
     
     def hold_target(self):
         print("Holding Target")
+        assert self.reserve_target == None
         self.reserve_target = self.target
         self.target = None
+        self.reserve_state = self.state
+
+    def resume(self):
+        """
+        Continues reserve target and state
+        """
+        print("Resuming Previous task if any")
+        self.target = self.reserve_target
+        self.reserve_target = None
+        if self.target:
+            print("target is now at", self.target[0], self.target[1])
+
+        self.state = self.reserve_state
+        self.reserve_state = None
+        if self.state:
+            print("state is now", self.state)
+    
 
     def step(self):
         """
@@ -133,10 +148,15 @@ class CT_Robot(mesa.Agent):
         action = "wait"
 
         # Check if CT needs to return to charging station
-        if self.must_return and self.state != CHARGING and self.state != PICKING:
-                print("CT returning to charging station, reserving target")
-                self.hold_target()
+        if self.must_return and self.state != PICKING:
+                print("CT returning to charging station")
                 self.state = CHARGING
+
+        # Continue with previous target if current target is finished
+        if not self.target and self.reserve_target:
+                print("Continuing with target")
+                self.resume()
+
 
         if self.state == EXPLORING:
             if not self.target:
@@ -153,7 +173,8 @@ class CT_Robot(mesa.Agent):
             if self.charge >= MAX_CHARGE:
                 self.state = IDLE
                 self.charge = MAX_CHARGE
-
+                self.target = None
+            
             elif self.atChargingPoint:
                 print("CT is at chargingpoint, now waiting until fully charged")
                 self.charge += CHARGING_SPEED
@@ -164,6 +185,7 @@ class CT_Robot(mesa.Agent):
                 self.targetChargingPoint()
                 action = "move_fw"
 
+
         elif self.state == EMPTYING:
             if (self.x == self.target[0] and self.y == self.target[1]):
                 print("CT is at wastebin, now unloading")
@@ -172,22 +194,16 @@ class CT_Robot(mesa.Agent):
                 print("moving towards waste bin")
                 action = "move_fw"
 
-        elif self.state == IDLE:
-            if self.reserve_target:
-                print("Continuing with target")
-                self.target = self.reserve_target
-                self.reserve_target = None
-                action = "move_fw"
-                return action
 
+        elif self.state == IDLE:
             # If all LargeDebris are done
-            elif not self.LargeDebrisLeft() and self.payload:
+            if not self.LargeDebrisLeft() and self.payload:
                 print("there are no LargeDebris left to do")
                 print("Moving Payload to waste bin")
                 action = "move_to_bin"
                 self.state = EMPTYING
                 return action
-        
+            
             elif not self.LargeDebrisLeft():
                 print("there are no LargeDebris left to do")
                 self.state = CHARGING
@@ -205,13 +221,15 @@ class CT_Robot(mesa.Agent):
             else:
                 self.state = CHARGING
 
+
         elif self.state == PICKING:
             if (self.x == self.target[0]) and (self.y == self.target[1]):
-                print("Robot is now picking")
+                print("Robot is now picking debris up")
                 action = "pick"
             else:
                 print("Robot is now moving forwards")
                 action = "move_fw"
+
         else:
             print("Robot is now returning to charging station")
             action = "goto_charging_station"
@@ -253,17 +271,17 @@ class CT_Robot(mesa.Agent):
         debris = [a for a in self.model.schedule.agents if (isinstance(a,LargeDebris) and (a.unique_id not in self.payload) and a.state == UNDONE)]
 
         if debris == []:
-            print("No Target Found")
+            #print("No Target Found")
             self.state = IDLE
             return False
 
         # Get closes Large Debris
         closest_debris = debris[0]
         for ld in debris:
-            if self.get_distance(ld) < self.get_distance(closest_debris):
+            if get_distance(self, ld) < get_distance(self, closest_debris):
                 closest_debris = ld
 
-        if self.get_distance(closest_debris) <= SCAN_RANGE:
+        if get_distance(self, closest_debris) <= SCAN_RANGE:
             closest_debris.state = UNDERWAY
             self.target = (closest_debris.x, closest_debris.y, closest_debris.unique_id)
             self.state = PICKING
@@ -273,15 +291,15 @@ class CT_Robot(mesa.Agent):
 
 
     def move_to_bin(self):
-        self.state = EMPTYING
         bin = [a for a in self.model.schedule.agents if isinstance(a,WasteBin)]
+        self.state = EMPTYING
         self.target = (bin[0].x, bin[0].y, bin[0].unique_id)
 
     def goto_charging_station(self):
-        self.state = CHARGING
         chp = [a for a in self.model.schedule.agents if isinstance(a,ChargingPoint)]
-        if self.target:
+        if self.target and self.state == PICKING:
             self.hold_target()
+        self.state = CHARGING
         self.target = (chp[0].x,chp[0].y, chp[0].unique_id)
 
 
@@ -302,6 +320,7 @@ class CT_Robot(mesa.Agent):
         self.chp_distance = self.get_chp_distance()
 
         if self.must_return:
+            self.hold_target()
             self.state = CHARGING
 
 
@@ -388,6 +407,7 @@ class CT_Robot(mesa.Agent):
         debris = [a for a in self.model.schedule.agents if isinstance(a,LargeDebris) and a.unique_id==self.target[2]]
         debris[0].state = UNDERWAY
         self.payload.append(self.target[2])
+        print("Payload is now", self.payload)
 
         # If maximum payload is exceeded set target to waste bin
         if len(self.payload) >= self.max_payload:
@@ -397,7 +417,7 @@ class CT_Robot(mesa.Agent):
             print("Heading towards waste bin at", self.target[0], self.target[1])
         else:
             self.target = None
-            self.state = IDLE
+            self.resume()
     
     def drop_off(self):
         """
@@ -423,12 +443,6 @@ class CT_Robot(mesa.Agent):
        """
        self.x = self.next_x
        self.y = self.next_y
-
-    def get_distance(self, item):
-        """
-        Uses manhattan distance for simplification.
-        """
-        return abs(self.x - item.x) + abs(self.y - item.y)
     
     def containsObstacle(self, x,y):
         obstacles = [a for a in self.model.schedule.agents if isinstance(a,Obstacle) and a.x == x and a.y == y]
@@ -439,7 +453,7 @@ class CT_Robot(mesa.Agent):
         
     def get_chp_distance(self):
         chp = [a for a in self.model.schedule.agents if isinstance(a,ChargingPoint)]
-        return self.get_distance(chp[0])
+        return get_distance(self, chp[0])
         
     
 class LC_Robot(mesa.Agent):
@@ -480,6 +494,10 @@ class LC_Robot(mesa.Agent):
     def DebrisLeft(self):
         debris = [a for a in self.model.schedule.agents if (isinstance(a,Debris) and (a.state == UNDONE))]
         return len(debris) != 0
+    
+    def LargeDebrisLeft(self):
+        ld = [a for a in self.model.schedule.agents if (isinstance(a,LargeDebris) and (a.state == UNDONE or self.state == UNDERWAY))]
+        return len(ld) != 0
 
     def step(self):
         """
@@ -495,11 +513,11 @@ class LC_Robot(mesa.Agent):
         Simple rule-based architecture, should determine the action to execute based on the robot state.
         """
         # Debug Print Statements
-        print("LC", self.unique_id, "state is:", self.state)
-        print("LC", self.unique_id, "position is: ", self.x, ",", self.y)
-        if self.target:
-            print("LC", self.unique_id, "target is at:", self.target[0], self.target[1])
-        print("Payload is", self.payload)
+        #print("LC", self.unique_id, "state is:", self.state)
+        #print("LC", self.unique_id, "position is: ", self.x, ",", self.y)
+        #if self.target:
+        #    print("LC", self.unique_id, "target is at:", self.target[0], self.target[1])
+        #print("Payload is", self.payload)
 
         # Default action (End)
         action = "wait"
@@ -515,42 +533,43 @@ class LC_Robot(mesa.Agent):
 
         elif self.state == EMPTYING:
             if (self.x == self.target[0] and self.y == self.target[1]):
-                print("CT is at wastebin, now unloading")
+                #print("CT is at wastebin, now unloading")
                 action = "drop_off"
             else:
-                print("moving towards waste bin")
+                #print("moving towards waste bin")
                 action = "move_fw"
 
         elif self.state == IDLE:
             # If no debris left
-            if not self.DebrisLeft():
-                print("there are no debris left to do")
+            if not self.DebrisLeft() and not self.LargeDebrisLeft():
+                #print("there are no debris left to do")
                 return action
             
             elif not self.DebrisLeft() and self.payload:
-                print("there are no debris left to do")
-                print("Moving Payload to waste bin")
+                #print("there are no debris left to do")
+                #print("Moving Payload to waste bin")
                 action = "move_to_bin"
                 return action
             
             if self.payload >= self.max_payload:
-                print("moving to bin")
+                #print("moving to bin")
                 action = "move_to_bin"
-            elif self.DebrisLeft():
-                print("Robot is now exploring")
+
+            elif self.DebrisLeft() or self.LargeDebrisLeft():
+                #print("Robot is now exploring")
                 self.state = EXPLORING
             else:
                 self.state = IDLE
 
         elif self.state == PICKING:
             if (self.x == self.target[0]) and (self.y == self.target[1]):
-                print("Robot is now picking")
+                #print("Robot is now picking")
                 action = "pick"
             else:
-                print("Robot is now moving forwards")
+                #print("Robot is now moving forwards")
                 action = "move_fw"
         else:
-            print("Robot is now returning to charging station")
+            #print("Robot is now returning to charging station")
             action = "goto_charging_station" # Return to base
         return action
 
@@ -568,16 +587,16 @@ class LC_Robot(mesa.Agent):
             y = math.floor(y_segment*NUMBER_OF_CELLS/(n_segments))-1
 
             if self.containsObstacle(x,y):
-                print("cell contains obstacle, finding new one")
+                #print("cell contains obstacle, finding new one")
                 continue
             if (x,y) in LC_explored_segments:
                 # if more than 90% of segments have been explored, reset explored segments
                 if len(LC_explored_segments) > 0.9* n_segments**2:
                     LC_explored_segments.clear()
-                print("LC segment already explored")
+                #print("LC segment already explored")
                 continue
 
-            print("Exploring around cell", x, y)
+            #print("Exploring around cell", x, y)
             LC_explored_segments.append((x,y))
             self.target = (x, y)
             break
@@ -595,26 +614,25 @@ class LC_Robot(mesa.Agent):
         ld = [a for a in self.model.schedule.agents if (isinstance(a,LargeDebris) and a.state == UNDONE)]
         if ld:
             # Get all Large Debris within range
-            ld = [x for x in ld if self.get_distance(x) <= SCAN_RANGE]
+            ld = [x for x in ld if get_distance(self, x) <= SCAN_RANGE]
             for x in ld:
-                print("Creating Job for")
-                #TODO check if job already in jobs
+                print("Creating Job")
                 self.create_job(x)
 
 
         # Find Debris within area and sets it as target.
         debris = [a for a in self.model.schedule.agents if (isinstance(a,Debris) and a.state == UNDONE)]
         if debris == []:
-            print("No Target Found")
-            self.state = IDLE
+            #print("No Target Found")
+            #self.state = IDLE
             return False
 
         closest_debris = debris[0]
         for d in debris:
-            if self.get_distance(d) < self.get_distance(closest_debris):
+            if get_distance(self, d) < get_distance(self, closest_debris):
                 closest_debris = d
 
-        if self.get_distance(closest_debris) <= SCAN_RANGE:
+        if get_distance(self, closest_debris) <= SCAN_RANGE:
             closest_debris.state = UNDERWAY
             self.target = (closest_debris.x, closest_debris.y, closest_debris.unique_id)
             self.state = PICKING
@@ -753,12 +771,6 @@ class LC_Robot(mesa.Agent):
        """
        self.x = self.next_x
        self.y = self.next_y
-
-    def get_distance(self, debris):
-        """
-        Uses the manhattan distance for simplification.
-        """
-        return abs(self.x - debris.x) + abs(self.y - debris.y)
     
     def containsObstacle(self, x,y):
         obstacles = [a for a in self.model.schedule.agents if isinstance(a,Obstacle) and a.x == x and a.y == y]
@@ -791,15 +803,15 @@ class Bidder(mesa.Agent):
         for job in self.jobs:
             if job.state in (UNDERWAY, DONE):
                 self.jobs.remove(job)
+        #print("Jobs are now", self.jobs)
 
 
     def update_CT_info(self):
         """
         Updates CT information to current step
         """
-        print("updating jobs")
-        self.CT_list = [a for a in self.model.schedule.agents if (isinstance(a,CT_Robot) and (a.state == IDLE or a.state == EXPLORING))]
-
+        self.CT_list = [a for a in self.model.schedule.agents if (isinstance(a,CT_Robot) and (a.state == IDLE or a.state == EXPLORING) and a.reserve_target==None)]
+        #print("Bidding CTs are:", [x.unique_id for x in self.CT_list])
 
     def create_auction(self, job):
         """
@@ -826,7 +838,6 @@ class Bidder(mesa.Agent):
         winner_CT = [a for a in self.model.schedule.agents if (isinstance(a,CT_Robot) and a.unique_id==winner[0])][0]
 
         # Set winner's target to job
-        winner_CT.reserve_target = winner_CT.target
         winner_CT.target = (job.x, job.y, job.unique_id)
         job.state = UNDERWAY
         winner_CT.state = PICKING
@@ -841,16 +852,15 @@ class Bidder(mesa.Agent):
         
         print("Bidder Step")
         if self.jobs:
-            print("Jobs are", self.jobs)
-
             self.update_jobs()
             self.update_CT_info()
 
             while self.jobs:
+                #print("Jobs are", self.jobs)
                 self.update_jobs()
                 self.update_CT_info()
-                #self.create_auction(self.jobs[0])
-                self.jobs = []
+                self.create_auction(self.jobs[0])
+                #self.jobs = []
     
 
 class LargeDebris(mesa.Agent):
@@ -901,6 +911,7 @@ class Obstacle(mesa.Agent):
         self.x, self.y = pos
 
 
+# Global Functions
 def get_distance(obj1, obj2):
     """
     Uses the manhattan distance for simplification.
