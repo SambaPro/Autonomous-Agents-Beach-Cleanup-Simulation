@@ -33,8 +33,8 @@ SCAN_RANGE = 5
 CT_MAX_PAYLOAD = 3
 CT_SPEED = 1
 NEEDS_CHARGE = True
-MAX_CHARGE = 300     # Maximum and starting charge, will decrease by 1 for each tile traversed
-MIN_CHARGE = 20      # Reserve charge when determining when to returning to charging station 
+MAX_CHARGE = 1000    # Maximum starting charge
+MIN_CHARGE = 50      # Reserve charge when determining when to returning to charging station 
 CHARGING_SPEED = 50  # Charge restored each step once at charging station
 
 # LC Parameters
@@ -55,8 +55,8 @@ class CT_Robot(mesa.Agent):
         self.target = None # (x,y,unique_id)
         self.reserve_target = None # Used to reserve target incase agent must return to charging station
         self.reserve_state = None
-        self.charge = random.randint(MAX_CHARGE/2, MAX_CHARGE) #CTs start with 50% to 100% charge
-        self.chp_distance = self.get_chp_distance()
+        self.charge = random.randint(MAX_CHARGE/2, MAX_CHARGE) # CTs start with 50% to 100% charge
+        self.chp_distance = self.get_chp_distance()            # Keeps track of distance to charging point
 
     @property
     def isBusy(self):
@@ -98,18 +98,22 @@ class CT_Robot(mesa.Agent):
 
     def resume(self):
         """
-        Continues reserve target and state
+        Continues reserve target and state if any
         """
         print("Resuming Previous task if any")
-        self.target = self.reserve_target
-        self.reserve_target = None
-        if self.target:
+        if self.reserve_target:
+            self.target = self.reserve_target
+            self.reserve_target = None
             print("target is now at", self.target[0], self.target[1])
 
-        self.state = self.reserve_state
-        self.reserve_state = None
-        if self.state:
+            self.state = self.reserve_state
+            self.reserve_state = None
             print("state is now", self.state)
+        else:
+            self.state = IDLE
+            self.target = None
+            self.reserve_state = None
+            self.reserve_target = None
     
 
     def step(self):
@@ -134,6 +138,7 @@ class CT_Robot(mesa.Agent):
         print("Payload contains", self.payload)
         print("CT", self.unique_id, "charge is:", self.charge)
         print("Distance to charging station is:", self.chp_distance)
+        print("Must return", self.must_return)
 
         ld  = [a for a in self.model.schedule.agents if (isinstance(a,LargeDebris) and (a.state == UNDONE or self.state == UNDERWAY))]
         print("Large Debris left", len(ld))
@@ -148,8 +153,10 @@ class CT_Robot(mesa.Agent):
         action = "wait"
 
         # Check if CT needs to return to charging station
-        if self.must_return and self.state != PICKING:
+        if self.must_return:
                 print("CT returning to charging station")
+                if self.state == PICKING:
+                    self.hold_target()                    
                 self.state = CHARGING
 
         # Continue with previous target if current target is finished
@@ -219,7 +226,7 @@ class CT_Robot(mesa.Agent):
                 self.state = EXPLORING
 
             else:
-                self.state = CHARGING
+                return action
 
 
         elif self.state == PICKING:
@@ -318,10 +325,6 @@ class CT_Robot(mesa.Agent):
 
         # Update recorded distance to charging point
         self.chp_distance = self.get_chp_distance()
-
-        if self.must_return:
-            self.hold_target()
-            self.state = CHARGING
 
 
     def move_payload(self):
@@ -849,18 +852,18 @@ class Bidder(mesa.Agent):
         * Checks if there are Jobs
         * Creates Auction for each Job based on CT Information
         """
-        
-        print("Bidder Step")
-        if self.jobs:
-            self.update_jobs()
-            self.update_CT_info()
-
-            while self.jobs:
-                #print("Jobs are", self.jobs)
+        if self.model.EXTENDED:
+            print("Bidder Step")
+            if self.jobs:
                 self.update_jobs()
                 self.update_CT_info()
-                self.create_auction(self.jobs[0])
-                #self.jobs = []
+
+                while self.jobs:
+                    print("Jobs are", self.jobs)
+                    self.update_jobs()
+                    self.update_CT_info()
+                    self.create_auction(self.jobs[0])
+
     
 
 class LargeDebris(mesa.Agent):
