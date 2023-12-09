@@ -3,7 +3,7 @@ import mesa
 import random
 import numpy as np
 from random import randint
-from beach.agents import CT_Robot, LargeDebris, WasteBin, ChargingPoint, Obstacle, Debris, LC_Robot
+from beach.agents import CT_Robot, LargeDebris, WasteBin, ChargingPoint, Obstacle, Debris, LC_Robot, Bidder
 from .agents import UNDONE, DONE, NUMBER_OF_CELLS, UNDERWAY, NEW_DEBRIS_CHANCE
 
 
@@ -19,19 +19,25 @@ class Beach(mesa.Model):
         y_s = []
         self.schedule = mesa.time.RandomActivation(self)
         self.EXTENDED = EXTENDED
-        self.x = 10000
+        self.n = 0 # Number of agents on Beach
 
         # Place Charger and Wastebin
         x = 49
         y = 0
-        wb = WasteBin(9998, (width-1,y),self)
+        wb = WasteBin(self.n, (width-1,y),self)
         self.schedule.add(wb)
         self.grid.place_agent(wb,(x,y))
+        self.n += 1
 
-        chp = ChargingPoint(9999, (0,0), self)
+        chp = ChargingPoint(self.n, (0,0), self)
         self.schedule.add(chp)
         self.grid.place_agent(wb,(0,0))
+        self.n += 1
 
+        # Create Bidder Agent
+        bidder  = Bidder(self.n, self)
+        self.schedule.add(bidder)
+        self.n += 1
 
         # Place Obstacles
         for n in range(self.n_obstacles):
@@ -41,9 +47,10 @@ class Beach(mesa.Model):
                 if self.grid.is_cell_empty((x,y)):
                     break
             
-            obstacle = Obstacle(n,(x,y),self)
+            obstacle = Obstacle(self.n,(x,y),self)
             self.schedule.add(obstacle)
             self.grid.place_agent(obstacle,(x,y))
+            self.n += 1
 
 
         # Create CT Agents
@@ -57,9 +64,10 @@ class Beach(mesa.Model):
                     break
             
             y_s.append(y)
-            pr = CT_Robot(n+self.n_obstacles,(x,y),self)
+            pr = CT_Robot(self.n,(x,y),self)
             self.schedule.add(pr)
             self.grid.place_agent(pr,(x,y))
+            self.n += 1
 
 
         # Create Large Debris
@@ -70,9 +78,10 @@ class Beach(mesa.Model):
                 if self.grid.is_cell_empty((x,y)):
                     break
 
-            b = LargeDebris(n+self.n_obstacles+self.n_CT_robots,(x,y),self)
+            b = LargeDebris(self.n,(x,y),self)
             self.schedule.add(b)
             self.grid.place_agent(b,(x,y))
+            self.n += 1
 
         # Create Small Debris
         for n in range(self.n_debris):
@@ -82,9 +91,10 @@ class Beach(mesa.Model):
                 if self.grid.is_cell_empty((x,y)):
                     break
 
-            d = Debris(n+self.n_obstacles+self.n_CT_robots+n_Ldebris,(x,y),self)
+            d = Debris(self.n,(x,y),self)
             self.schedule.add(d)
             self.grid.place_agent(d,(x,y))
+            self.n += 1
 
         # Create LC robots
         for n in range(self.n_LC_robots):
@@ -97,9 +107,10 @@ class Beach(mesa.Model):
                     break
             
             y_s.append(y)
-            lc = LC_Robot(n+self.n_obstacles+self.n_CT_robots+n_Ldebris+n_debris,(x,y),self)
+            lc = LC_Robot(self.n,(x,y),self)
             self.schedule.add(lc)
             self.grid.place_agent(lc,(x,y))
+            self.n += 1
 
             
         self.running = True
@@ -118,9 +129,10 @@ class Beach(mesa.Model):
             print("Simulation Stopping")
             self.running = False
         
-               
-        # Chance to add new Large Debris to beach
+
         if self.EXTENDED:
+
+            # Chance to add new Large Debris to beach
             num = random.random()
             if num < NEW_DEBRIS_CHANCE:
                 while True:
@@ -129,12 +141,10 @@ class Beach(mesa.Model):
                     if self.grid.is_cell_empty((x,y)):
                         break
 
-                d = LargeDebris(self.x,(x,y),self)
-                self.x =self.x + 1
+                d = LargeDebris(self.n,(x,y),self)
+                self.n += 1
                 self.schedule.add(d)
-                self.grid.place_agent(d,(x,y))
-
-
+                self.grid.place_agent(d,(x,y))                
 
 
     def run_model(self) -> None:

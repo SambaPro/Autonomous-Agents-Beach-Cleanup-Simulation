@@ -31,9 +31,7 @@ def CT_portrayal(CT):
     if CT is None:
         raise AssertionError
     return {
-        "Shape": "arrowHead",
-        "w": 1,
-        "h": 1,
+        "Shape": "circle",
         "Filled": "true",
         "Layer": 0,
         "x": CT.x,
@@ -41,7 +39,7 @@ def CT_portrayal(CT):
         "scale": 2,
         "heading_x": -1 if CT.isBusy else 1,
         "heading_y":0,
-        # "r":4,
+        "r":2,
         "Color": "red" if CT.isBusy else "green",
     }
 
@@ -59,7 +57,6 @@ def LC_portrayal(LC):
         "scale": 2,
         "heading_x": -1 if LC.isBusy else 1,
         "heading_y":0,
-        # "r":4,
         "Color": "orange" if LC.isBusy else "blue",
     }
 

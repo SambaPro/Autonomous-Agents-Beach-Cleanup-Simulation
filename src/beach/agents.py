@@ -4,7 +4,7 @@ import random
 import math
 
 """ Extended Features from Assignment 2 """
-NEW_DEBRIS_CHANCE = 0.01  # Chance to add new debris to beach 
+NEW_DEBRIS_CHANCE = 0.01     # Chance to add new debris to beach 
 
 """ Beach Parameters"""
 NUMBER_OF_CELLS = 50
@@ -29,9 +29,9 @@ DONE = 1
 # General Parameters
 SCAN_RANGE = 5
 
-# CR Parameters
-CR_MAX_PAYLOAD = 3
-CR_SPEED = 1
+# CT Parameters
+CT_MAX_PAYLOAD = 3
+CT_SPEED = 1
 NEEDS_CHARGE = True
 MAX_CHARGE = 300     # Maximum and starting charge, will decrease by 1 for each tile traversed
 MIN_CHARGE = 20      # Reserve charge when determining when to returning to charging station 
@@ -44,7 +44,7 @@ LC_SPEED = 3
 
 class CT_Robot(mesa.Agent):
     """Represents a CT Robot on the beach."""
-    def __init__(self, id, pos, model, max_payload=CR_MAX_PAYLOAD, speed=CR_SPEED, init_state=IDLE):
+    def __init__(self, id, pos, model, max_payload=CT_MAX_PAYLOAD, speed=CT_SPEED, init_state=IDLE):
         super().__init__(id, model)
         self.x, self.y = pos
         self.next_x, self.next_y = None, None
@@ -77,10 +77,14 @@ class CT_Robot(mesa.Agent):
 
     
     def targetChargingPoint(self):
+        if self.target:
+            self.hold_target()
         chp = [a for a in self.model.schedule.agents if isinstance(a,ChargingPoint)]
         self.target = (chp[0].x, chp[0].y, chp[0].unique_id)
 
     def targetWasteBin(self):
+        if self.target:
+            self.hold_target()
         wb = [a for a in self.model.schedule.agents if isinstance(a,WasteBin)]
         self.target = (wb[0].x, wb[0].y, wb[0].unique_id)
 
@@ -119,7 +123,7 @@ class CT_Robot(mesa.Agent):
         ld  = [a for a in self.model.schedule.agents if (isinstance(a,LargeDebris) and (a.state == UNDONE or self.state == UNDERWAY))]
         print("Large Debris left", len(ld))
         d  = [a for a in self.model.schedule.agents if (isinstance(a,Debris) and (a.state == UNDONE or self.state == UNDERWAY))]
-        print("Large Debris left", len(d))
+        print("Debris left", len(d))
 
         # Assertions
         assert(self.charge >= 0)
@@ -276,6 +280,8 @@ class CT_Robot(mesa.Agent):
     def goto_charging_station(self):
         self.state = CHARGING
         chp = [a for a in self.model.schedule.agents if isinstance(a,ChargingPoint)]
+        if self.target:
+            self.hold_target()
         self.target = (chp[0].x,chp[0].y, chp[0].unique_id)
 
 
@@ -579,17 +585,30 @@ class LC_Robot(mesa.Agent):
     # Robot actions
     def find_target(self):
         """
+        Scans area for Large Debris and creates job if found.
         Finds Debris within area and sets it as target.
         If no Debris found, continue exploring.
+        Return True if debris is found, else False
         """
-        debris = [a for a in self.model.schedule.agents if (isinstance(a,Debris) and a.state == UNDONE)]
 
+        # Scan area for Large Debris and create job if found
+        ld = [a for a in self.model.schedule.agents if (isinstance(a,LargeDebris) and a.state == UNDONE)]
+        if ld:
+            # Get all Large Debris within range
+            ld = [x for x in ld if self.get_distance(x) <= SCAN_RANGE]
+            for x in ld:
+                print("Creating Job for")
+                #TODO check if job already in jobs
+                self.create_job(x)
+
+
+        # Find Debris within area and sets it as target.
+        debris = [a for a in self.model.schedule.agents if (isinstance(a,Debris) and a.state == UNDONE)]
         if debris == []:
             print("No Target Found")
             self.state = IDLE
             return False
 
-        # Get closes debris
         closest_debris = debris[0]
         for d in debris:
             if self.get_distance(d) < self.get_distance(closest_debris):
@@ -747,6 +766,92 @@ class LC_Robot(mesa.Agent):
             return True
         else: 
             return False
+        
+    def create_job(self, ld):
+        bd = [a for a in self.model.schedule.agents if isinstance(a,Bidder)][0]
+        if ld not in bd.jobs:
+            bd.jobs.append(ld)
+        
+
+class Bidder(mesa.Agent):
+    """Allows CT robots to bid on jobs"""
+    def __init__(self, id, model, init_state=UNDONE):
+        """
+        Initialise
+        """
+        super().__init__(id, model)
+        self.jobs = []               # List of Large Debris that has been discovered
+        self.CT_list = []            # List of CTs available for bidding
+
+    def update_jobs(self):
+        """
+        Removes UNDERWAY and DONE objects
+        """
+        # Remove UNDERWAY and DONE objects
+        for job in self.jobs:
+            if job.state in (UNDERWAY, DONE):
+                self.jobs.remove(job)
+
+
+    def update_CT_info(self):
+        """
+        Updates CT information to current step
+        """
+        print("updating jobs")
+        self.CT_list = [a for a in self.model.schedule.agents if (isinstance(a,CT_Robot) and (a.state == IDLE or a.state == EXPLORING))]
+
+
+    def create_auction(self, job):
+        """
+        * Creates an auction for given job
+        * Removes Job from list once assigned
+        * If Job is not assigned remove it
+        """
+        # Placeholder - Gives Job to nearest IDLE/EXPLORING CT Agent
+        # If no CTs available remove job
+        if not self.CT_list:
+            print("No available agents for job")
+            self.jobs.remove(job)
+            return
+        
+        CT_bid = [] # (Unique_id, Distance to job, Charge, Storage Remaining)
+        for CT in self.CT_list:
+            CT_bid.append((CT.unique_id, get_distance(job, CT), CT.charge, CT_MAX_PAYLOAD - len(CT.payload)))
+
+
+        # Find Closest
+        winner = min(CT_bid, key=lambda t: t[1])
+        print("Winner is ", winner)
+
+        winner_CT = [a for a in self.model.schedule.agents if (isinstance(a,CT_Robot) and a.unique_id==winner[0])][0]
+
+        # Set winner's target to job
+        winner_CT.reserve_target = winner_CT.target
+        winner_CT.target = (job.x, job.y, job.unique_id)
+        job.state = UNDERWAY
+        winner_CT.state = PICKING
+
+        self.jobs.remove(job)
+    
+    def step(self):
+        """
+        * Checks if there are Jobs
+        * Creates Auction for each Job based on CT Information
+        """
+        
+        print("Bidder Step")
+        if self.jobs:
+            print("Jobs are", self.jobs)
+
+            self.update_jobs()
+            self.update_CT_info()
+
+            while self.jobs:
+                self.update_jobs()
+                self.update_CT_info()
+                #self.create_auction(self.jobs[0])
+                self.jobs = []
+    
 
 class LargeDebris(mesa.Agent):
     """Represents a large piece of debris on the beach."""
@@ -770,27 +875,34 @@ class Debris(mesa.Agent):
 
 class WasteBin(mesa.Agent):
     """Represents a Waste Bin where robots deposit waste."""
-    def __init__(self, id, pos, model, init_state=UNDONE):
+    def __init__(self, id, pos, model):
         """
-        Intialise state and position of the Waste Bin
+        Intialise position of the Waste Bin
         """
         super().__init__(id, model)
         self.x, self.y = pos
 
 class ChargingPoint(mesa.Agent):
     """Represents a Charging Point where CT robots recharge."""
-    def __init__(self, id, pos, model, init_state=UNDONE):
+    def __init__(self, id, pos, model):
         """
-        Intialise state and position of the Charging Station
+        Intialise position of the Charging Station
         """
         super().__init__(id, model)
         self.x, self.y = pos
 
 class Obstacle(mesa.Agent):
     """Represents an Obstacle where robots cannot move to."""
-    def __init__(self, id, pos, model, init_state=UNDONE):
+    def __init__(self, id, pos, model):
         """
-        Intialise state and position of the Obstacle
+        Intialise position of the Obstacle
         """
         super().__init__(id, model)
         self.x, self.y = pos
+
+
+def get_distance(obj1, obj2):
+    """
+    Uses the manhattan distance for simplification.
+    """
+    return abs(obj1.x - obj2.x) + abs(obj1.y - obj2.y)
