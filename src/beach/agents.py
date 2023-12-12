@@ -5,6 +5,7 @@ import math
 
 """ Extended Features from Assignment 2 """
 NEW_DEBRIS_CHANCE = 0.01     # Chance to add new debris to beach 
+VOTING_TYPE = "PLURALITY"      # PLURALITY or ANTIPLURALITY
 
 """ Beach Parameters"""
 NUMBER_OF_CELLS = 50
@@ -34,7 +35,7 @@ CT_MAX_PAYLOAD = 3
 CT_SPEED = 1
 NEEDS_CHARGE = True
 MAX_CHARGE = 1000    # Maximum starting charge
-MIN_CHARGE = 50      # Reserve charge when determining when to returning to charging station 
+MIN_CHARGE = 100     # Reserve charge when determining when to returning to charging station 
 CHARGING_SPEED = 50  # Charge restored each step once at charging station
 
 # LC Parameters
@@ -129,7 +130,8 @@ class CT_Robot(mesa.Agent):
         """
         Simple rule-based architecture, should determine the action to execute based on the robot state.
         """
-        # Debug Print Statements
+        # Debug Print Statements 
+        
         print("CT", self.unique_id, "state is:", self.state)
         print("CT", self.unique_id, "position is: ", self.x, ",", self.y)
         if self.target:
@@ -789,7 +791,7 @@ class LC_Robot(mesa.Agent):
         
 
 class Bidder(mesa.Agent):
-    """Allows CT robots to bid on jobs"""
+    """Agent that handles auctions"""
     def __init__(self, id, model, init_state=UNDONE):
         """
         Initialise
@@ -802,7 +804,6 @@ class Bidder(mesa.Agent):
         """
         Removes UNDERWAY and DONE objects
         """
-        # Remove UNDERWAY and DONE objects
         for job in self.jobs:
             if job.state in (UNDERWAY, DONE):
                 self.jobs.remove(job)
@@ -813,7 +814,7 @@ class Bidder(mesa.Agent):
         """
         Updates CT information to current step
         """
-        self.CT_list = [a for a in self.model.schedule.agents if (isinstance(a,CT_Robot) and (a.state == IDLE or a.state == EXPLORING) and a.reserve_target==None)]
+        self.CT_list = [a for a in self.model.schedule.agents if (isinstance(a,CT_Robot) and (a.state == IDLE or a.state == EXPLORING) and a.reserve_target==None and len(a.payload) != 3)]
         #print("Bidding CTs are:", [x.unique_id for x in self.CT_list])
 
     def create_auction(self, job):
@@ -822,29 +823,97 @@ class Bidder(mesa.Agent):
         * Removes Job from list once assigned
         * If Job is not assigned remove it
         """
-        # Placeholder - Gives Job to nearest IDLE/EXPLORING CT Agent
+
+        # Assign job to winner using its unique_id
+        def assign_winner(id):
+            print("Assigning CT", id, "to job")
+            winner_CT = [a for a in self.model.schedule.agents if (isinstance(a,CT_Robot) and a.unique_id==id)][0]
+            winner_CT.target = (job.x, job.y, job.unique_id)
+            job.state = UNDERWAY
+            winner_CT.state = PICKING
+
+        # Voting Methods  
+        def plurality(CT_bid):
+            """
+            Assigns agent based on most votes.
+            if multiple agents have the same votes the agent 2ith the lowest id will be assigned
+            """
+            for x in range(1, len(CT_bid.values())+1):
+                # Get smallest value in column
+                scores = ([i[x] for i in CT_bid.values()])
+                smallest  = min(scores)
+                highest_score = -1
+
+                for (key, value) in CT_bid.items():
+                    #print(key,value)
+                    #print(CT_bid[key][x])
+
+                    if value[0] > highest_score:
+                        highest_score = value[0]
+                        id = key
+
+                    if CT_bid[key][x] == smallest:
+                        new = list(value)
+                        new[0] += 1
+                        CT_bid[key] = tuple(new)
+
+            return id
+        
+        def antiplurality(CT_bid):
+            """
+            Worst agent recieves votes and agent with the least votes gets assigned. 
+            if multiple agents have the same votes the agent 2ith the lowest id will be assigned
+            """
+            for x in range(1, len(CT_bid.values())+1):
+                # Get smallest value in column
+                scores = ([i[x] for i in CT_bid.values()])
+                largest  = max(scores)
+                highest_score = 100000
+
+                for (key, value) in CT_bid.items():
+                    #print(key,value)
+                    #print(CT_bid[key][x])
+
+                    if value[0] < highest_score:
+                        highest_score = value[0]
+                        id = key
+
+                    if CT_bid[key][x] == largest:
+                        new = list(value)
+                        new[0] += 1
+                        CT_bid[key] = tuple(new)
+
+            return id
+
+
         # If no CTs available remove job
         if not self.CT_list:
             print("No available agents for job")
             self.jobs.remove(job)
             return
         
-        CT_bid = [] # (Unique_id, Distance to job, Charge, Storage Remaining)
+        # If only 1 CT, assign it to job
+        if len(self.CT_list) == 1:
+            print("sole winner is:", self.CT_list[0])
+            assign_winner(self.CT_list[0].unique_id)
+            return
+        
+        CT_bid = {} # (Unique_id: Score, Distance to job, Charge Lost, Current Payload)
         for CT in self.CT_list:
-            CT_bid.append((CT.unique_id, get_distance(job, CT), CT.charge, CT_MAX_PAYLOAD - len(CT.payload)))
+            CT_bid[CT.unique_id] = (0, get_distance(job, CT), MAX_CHARGE - CT.charge, len(CT.payload))
+        print("CT_bid is:", CT_bid)
 
-
-        # Find Closest
-        winner = min(CT_bid, key=lambda t: t[1])
+        # Return id of winning CT
+        match VOTING_TYPE:
+            case "PLURALITY":
+                winner = plurality(CT_bid)
+            case "ANTIPLURALITY":
+                winner = antiplurality(CT_bid)
+            case _:
+                winner = min(CT_bid, key=lambda t: t[1]) # Closest CT agent wins
+        
         print("Winner is ", winner)
-
-        winner_CT = [a for a in self.model.schedule.agents if (isinstance(a,CT_Robot) and a.unique_id==winner[0])][0]
-
-        # Set winner's target to job
-        winner_CT.target = (job.x, job.y, job.unique_id)
-        job.state = UNDERWAY
-        winner_CT.state = PICKING
-
+        assign_winner(winner)
         self.jobs.remove(job)
     
     def step(self):
@@ -862,7 +931,8 @@ class Bidder(mesa.Agent):
                     print("Jobs are", self.jobs)
                     self.update_jobs()
                     self.update_CT_info()
-                    self.create_auction(self.jobs[0])
+                    if self.jobs:
+                        self.create_auction(self.jobs[0])
 
     
 
