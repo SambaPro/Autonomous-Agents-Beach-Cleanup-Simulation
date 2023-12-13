@@ -3,13 +3,61 @@ import mesa
 import random
 import numpy as np
 from random import randint
-from beach.agents import CT_Robot, LargeDebris, WasteBin, ChargingPoint, Obstacle, Debris, LC_Robot, Bidder
-from .agents import UNDONE, DONE, NUMBER_OF_CELLS, UNDERWAY, NEW_DEBRIS_CHANCE
+from .agents import CT_Robot, LargeDebris, WasteBin, ChargingPoint, Obstacle, Debris, LC_Robot, Bidder
+from .agents import NUMBER_OF_CELLS, NEW_DEBRIS_CHANCE,  UNDONE, DONE, UNDERWAY, IDLE, EXPLORING, PICKING, CHARGING, EMPTYING
+
+def pending_LDebris(model):
+    """
+    Returns number of Large Debris not collected by CT agents
+    """
+    return len([a for a in model.schedule.agents if isinstance(a,LargeDebris) and a.state not in (UNDERWAY, DONE)])
+
+def pending_Debris(model):
+    """
+    Returns number of Debris not collected by LC agents
+    """
+    return len([a for a in model.schedule.agents if isinstance(a,Debris) and a.state not in (UNDERWAY, DONE)])
+
+def get_busy_CT(model):
+    return len([a for a in model.schedule.agents if isinstance(a,CT_Robot) and a.state in (PICKING, CHARGING, EMPTYING)])
+
+def get_exploring_CT(model):
+    return len([a for a in model.schedule.agents if isinstance(a,CT_Robot) and a.state == EXPLORING])
+"""
+def get_charge_time(model):
+    if len([a for a in model.schedule.agents if isinstance(a,LargeDebris)]) == 0:
+        return
+    CTs = [a for a in model.schedule.agents if isinstance(a,CT_Robot) and a.state==CHARGING]
+    
+    if CTs:
+        for CT in CTs:
+            model.cum_charge_time += 1
+        
+    return model.cum_charge_time
+    """
+
+def get_busy_LC(model):
+    return len([a for a in model.schedule.agents if isinstance(a,LC_Robot) and a.state in (PICKING, EMPTYING)])
+
+def get_exploring_LC(model):
+    return len([a for a in model.schedule.agents if isinstance(a,LC_Robot) and a.state == EXPLORING])
+
+def get_CT_efficiency(model):
+    CTs = [a for a in model.schedule.agents if isinstance(a,CT_Robot)]
+    CT_efficiency = []
+    for CT in CTs:
+        if CT.total_collected != 0:
+            CT_efficiency.append((CT.unique_id, CT.charge_spent,CT.total_collected))
+
+    return CT_efficiency
+
+
 
 
 class Beach(mesa.Model):
     """ Model representing a beach full of trash"""
-    def __init__(self, n_CT_robots, n_Ldebris, n_obstacles, n_debris, n_LC_robots, EXTENDED,width=NUMBER_OF_CELLS, height=NUMBER_OF_CELLS):
+    def __init__(self, n_CT_robots, n_LC_robots, n_obstacles, n_debris, n_Ldebris, EXTENDED, width=NUMBER_OF_CELLS, height=NUMBER_OF_CELLS, seed=123):
+        self.tick = 0
         self.n_CT_robots = n_CT_robots
         self.n_Ldebris = n_Ldebris
         self.n_obstacles = n_obstacles
@@ -112,6 +160,21 @@ class Beach(mesa.Model):
             self.grid.place_agent(lc,(x,y))
             self.n += 1
 
+            self.datacollector = mesa.DataCollector(
+            model_reporters={
+                            "pending_LDebris": pending_LDebris,
+                            "pending_Debris": pending_Debris,
+                            "busy_CT": get_busy_CT,
+                            "exploring_CT": get_exploring_CT,
+                            "busy_LC": get_busy_LC,
+                            "exploring_LC": get_exploring_LC,
+                            "CT_efficiency": get_CT_efficiency
+            }, 
+            agent_reporters={
+                            "state": "state",
+                            "charge": "charge"
+            })
+
             
         self.running = True
 
@@ -120,6 +183,8 @@ class Beach(mesa.Model):
         """
         * Run while there are Undone Debris, otherwise stop running model.
         """
+        self.tick += 1
+        
         # Ends if all Debris are DONE
         if len([a for a in self.schedule.agents if isinstance(a,LargeDebris) and (a.state == UNDONE or a.state == UNDERWAY)])  != 0:
             self.schedule.step()
@@ -144,7 +209,9 @@ class Beach(mesa.Model):
                 d = LargeDebris(self.n,(x,y),self)
                 self.n += 1
                 self.schedule.add(d)
-                self.grid.place_agent(d,(x,y))                
+                self.grid.place_agent(d,(x,y)) 
+
+        self.datacollector.collect(self)               
 
 
     def run_model(self) -> None:

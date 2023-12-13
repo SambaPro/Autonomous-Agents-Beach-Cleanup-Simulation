@@ -34,12 +34,12 @@ SCAN_RANGE = 5
 CT_MAX_PAYLOAD = 3
 CT_SPEED = 1
 NEEDS_CHARGE = True
-MAX_CHARGE = 1000    # Maximum starting charge
+MAX_CHARGE = 750    # Maximum starting charge
 MIN_CHARGE = 100     # Reserve charge when determining when to returning to charging station 
 CHARGING_SPEED = 50  # Charge restored each step once at charging station
 
 # LC Parameters
-LC_MAX_PAYLOAD = 10
+LC_MAX_PAYLOAD = 20
 LC_SPEED = 3
 
 
@@ -58,6 +58,8 @@ class CT_Robot(mesa.Agent):
         self.reserve_state = None
         self.charge = random.randint(MAX_CHARGE/2, MAX_CHARGE) # CTs start with 50% to 100% charge
         self.chp_distance = self.get_chp_distance()            # Keeps track of distance to charging point
+        self.charge_spent = 0
+        self.total_collected = 0
 
     @property
     def isBusy(self):
@@ -324,6 +326,7 @@ class CT_Robot(mesa.Agent):
 
         if NEEDS_CHARGE:
             self.charge -= cells_moved
+            self.charge_spent += cells_moved
 
         # Update recorded distance to charging point
         self.chp_distance = self.get_chp_distance()
@@ -413,6 +416,8 @@ class CT_Robot(mesa.Agent):
         debris[0].state = UNDERWAY
         self.payload.append(self.target[2])
         print("Payload is now", self.payload)
+
+        self.total_collected += 1
 
         # If maximum payload is exceeded set target to waste bin
         if len(self.payload) >= self.max_payload:
@@ -528,6 +533,10 @@ class LC_Robot(mesa.Agent):
         action = "wait"
 
         if self.state == EXPLORING:
+            if not self.DebrisLeft() and not self.LargeDebrisLeft():
+                self.state = IDLE
+                return action
+
             if not self.target or self.x == self.target[0] and self.y == self.target[1]:
                 self.set_explore_target()
 
