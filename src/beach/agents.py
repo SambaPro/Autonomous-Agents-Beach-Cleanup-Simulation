@@ -7,6 +7,10 @@ import math
 NEW_DEBRIS_CHANCE = 0.01     # Chance to add new debris to beach 
 VOTING_TYPE = "PLURALITY"      # PLURALITY or ANTIPLURALITY
 
+""" Novel Feature Parameters"""
+n_clusters = 6                # Number of clusters of debris
+cluster_spread = 3            # Max distance of debris from cluster
+
 """ Beach Parameters"""
 NUMBER_OF_CELLS = 50
 n = 0

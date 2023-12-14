@@ -4,7 +4,7 @@ import random
 import numpy as np
 from random import randint
 from .agents import CT_Robot, LargeDebris, WasteBin, ChargingPoint, Obstacle, Debris, LC_Robot, Bidder
-from .agents import NUMBER_OF_CELLS, NEW_DEBRIS_CHANCE,  UNDONE, DONE, UNDERWAY, IDLE, EXPLORING, PICKING, CHARGING, EMPTYING
+from .agents import NUMBER_OF_CELLS, NEW_DEBRIS_CHANCE, n_clusters, cluster_spread,  UNDONE, DONE, UNDERWAY, IDLE, EXPLORING, PICKING, CHARGING, EMPTYING
 
 def pending_LDebris(model):
     """
@@ -77,6 +77,55 @@ class Beach(mesa.Model):
         self.schedule.add(bidder)
         self.n += 1
 
+        # Create n_clusters clusters of Debris
+        if NOVEL:
+            def generate_point(mean_x, mean_y, deviation):
+                """
+                Use gausian distribution to generate points around cluster center
+                """
+                point = [int(random.gauss(mean_x, deviation)), int(random.gauss(mean_y, deviation))]
+                if point[0] > width-1:
+                    point[0] = width-1
+                elif point[0] < 1:
+                    point[0] = 1
+                if point[1] > height-1:
+                    point[1] = height-1
+                elif point[1] < 1:
+                    point[1] = 1
+                return point
+            
+            for m in range(n_clusters):
+                # generate cluster centre
+                cluster_centre_x = randint(cluster_spread,width-(cluster_spread+2))
+                cluster_centre_y = randint(cluster_spread,height-(cluster_spread+2))
+
+                # generate debris in range of cluster centre
+                for n in range(self.n_debris//n_clusters):
+                    while True:
+                        print("centre is:", cluster_centre_x, cluster_centre_y)
+                        point = generate_point(cluster_centre_x, cluster_centre_y, cluster_spread)
+                        print(point)
+                        #if self.grid.is_cell_empty((x,y)):
+                        break
+
+                    d = Debris(self.n,(point[0], point[1]),self)
+                    self.schedule.add(d)
+                    self.grid.place_agent(d,(point[0], point[1]))
+                    self.n += 1
+
+        else:
+            for n in range(self.n_debris):
+                while True:
+                    x = randint(4,width-1)
+                    y = randint(4,width-1)
+                    if self.grid.is_cell_empty((x,y)):
+                        break
+                d = Debris(self.n,(x, y),self)
+                self.schedule.add(d)
+                self.grid.place_agent(d,(x,y))
+                self.n += 1
+            
+
         # Place Obstacles
         for n in range(self.n_obstacles):
             while True:
@@ -121,18 +170,7 @@ class Beach(mesa.Model):
             self.grid.place_agent(b,(x,y))
             self.n += 1
 
-        # Create Small Debris
-        for n in range(self.n_debris):
-            while True:
-                x = randint(4,width-1)
-                y = randint(4,width-1)
-                if self.grid.is_cell_empty((x,y)):
-                    break
-
-            d = Debris(self.n,(x,y),self)
-            self.schedule.add(d)
-            self.grid.place_agent(d,(x,y))
-            self.n += 1
+    
 
         # Create LC robots
         for n in range(self.n_LC_robots):
