@@ -100,7 +100,7 @@ def wastebin_portrayal(wb):
         "Layer": 0,
         "x": wb.x,
         "y": wb.y,
-        "Color": "blue",
+        "Color": "red",
     }
 
 def chargingpoint_portrayal(chp):
@@ -114,7 +114,7 @@ def chargingpoint_portrayal(chp):
         "Layer": 0,
         "x": chp.x,
         "y": chp.y,
-        "Color": "blue",
+        "Color": "green",
     }
 
 def obstacle_portrayal(obst):

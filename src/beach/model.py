@@ -23,18 +23,6 @@ def get_busy_CT(model):
 
 def get_exploring_CT(model):
     return len([a for a in model.schedule.agents if isinstance(a,CT_Robot) and a.state == EXPLORING])
-"""
-def get_charge_time(model):
-    if len([a for a in model.schedule.agents if isinstance(a,LargeDebris)]) == 0:
-        return
-    CTs = [a for a in model.schedule.agents if isinstance(a,CT_Robot) and a.state==CHARGING]
-    
-    if CTs:
-        for CT in CTs:
-            model.cum_charge_time += 1
-        
-    return model.cum_charge_time
-    """
 
 def get_busy_LC(model):
     return len([a for a in model.schedule.agents if isinstance(a,LC_Robot) and a.state in (PICKING, EMPTYING)])
@@ -52,11 +40,9 @@ def get_CT_efficiency(model):
     return CT_efficiency
 
 
-
-
 class Beach(mesa.Model):
     """ Model representing a beach full of trash"""
-    def __init__(self, n_CT_robots, n_LC_robots, n_obstacles, n_debris, n_Ldebris, EXTENDED, width=NUMBER_OF_CELLS, height=NUMBER_OF_CELLS, seed=123):
+    def __init__(self, n_CT_robots, n_LC_robots, n_obstacles, n_debris, n_Ldebris, EXTENDED, NOVEL, width=NUMBER_OF_CELLS, height=NUMBER_OF_CELLS):
         self.tick = 0
         self.n_CT_robots = n_CT_robots
         self.n_Ldebris = n_Ldebris
@@ -67,23 +53,27 @@ class Beach(mesa.Model):
         y_s = []
         self.schedule = mesa.time.RandomActivation(self)
         self.EXTENDED = EXTENDED
+        self.NOVEL = NOVEL
         self.n = 0 # Number of agents on Beach
 
-        # Place Charger and Wastebin
-        x = 49
+        # Place Wastebin
+        x = width-1
         y = 0
-        wb = WasteBin(self.n, (width-1,y),self)
+        wb = WasteBin(self.n, (x,y),self)
         self.schedule.add(wb)
         self.grid.place_agent(wb,(x,y))
         self.n += 1
 
-        chp = ChargingPoint(self.n, (0,0), self)
+        # Place Charger
+        x = 0
+        y = 0
+        chp = ChargingPoint(self.n, (x,y), self)
         self.schedule.add(chp)
-        self.grid.place_agent(wb,(0,0))
+        self.grid.place_agent(chp,(x,y))
         self.n += 1
 
         # Create Bidder Agent
-        bidder  = Bidder(self.n, self)
+        bidder = Bidder(self.n, self)
         self.schedule.add(bidder)
         self.n += 1
 

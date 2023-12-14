@@ -87,6 +87,7 @@ class CT_Robot(mesa.Agent):
     def targetWasteBin(self):
         wb = [a for a in self.model.schedule.agents if isinstance(a,WasteBin)]
         self.target = (wb[0].x, wb[0].y, wb[0].unique_id)
+        print("Wastebin is at:", wb[0].x, wb[0].y)
 
     def LargeDebrisLeft(self):
         ld = [a for a in self.model.schedule.agents if (isinstance(a,LargeDebris) and (a.state == UNDONE or self.state == UNDERWAY))]
@@ -132,8 +133,8 @@ class CT_Robot(mesa.Agent):
         """
         Simple rule-based architecture, should determine the action to execute based on the robot state.
         """
+
         # Debug Print Statements 
-        
         print("CT", self.unique_id, "state is:", self.state)
         print("CT", self.unique_id, "position is: ", self.x, ",", self.y)
         if self.target:
@@ -144,6 +145,7 @@ class CT_Robot(mesa.Agent):
         print("Distance to charging station is:", self.chp_distance)
         print("Must return", self.must_return)
 
+
         ld  = [a for a in self.model.schedule.agents if (isinstance(a,LargeDebris) and (a.state == UNDONE or self.state == UNDERWAY))]
         print("Large Debris left", len(ld))
         d  = [a for a in self.model.schedule.agents if (isinstance(a,Debris) and (a.state == UNDONE or self.state == UNDERWAY))]
@@ -151,7 +153,6 @@ class CT_Robot(mesa.Agent):
 
         # Assertions
         assert(self.charge >= 0)
-
 
         # Default action (End)
         action = "wait"
@@ -482,20 +483,11 @@ class LC_Robot(mesa.Agent):
     @property
     def isBusy(self):
         return (self.state==EXPLORING or self.state == PICKING)
-  
-    @property
-    def atChargingPoint(self):
-        chp = [a for a in self.model.schedule.agents if isinstance(a,ChargingPoint)]
-        return (self.x == chp[0].x and self.y == chp[0].y)
     
     @property
     def atWasteBin(self):
         wb = [a for a in self.model.schedule.agents if isinstance(a,WasteBin)]
         return self.x == wb[0].x and self.y == wb[0]
-    
-    def targetChargingPoint(self):
-        chp = [a for a in self.model.schedule.agents if isinstance(a,ChargingPoint)]
-        self.target = (chp[0].x, chp[0].y, chp[0].unique_id)
 
     def targetWasteBin(self):
         wb = [a for a in self.model.schedule.agents if isinstance(a,WasteBin)]
@@ -547,7 +539,7 @@ class LC_Robot(mesa.Agent):
 
         elif self.state == EMPTYING:
             if (self.x == self.target[0] and self.y == self.target[1]):
-                #print("CT is at wastebin, now unloading")
+                print("CT is at wastebin, now unloading")
                 action = "drop_off"
             else:
                 #print("moving towards waste bin")
@@ -587,7 +579,9 @@ class LC_Robot(mesa.Agent):
             action = "goto_charging_station" # Return to base
         return action
 
-
+    def deliberate_ACO():
+        return
+    
     # Robot actions
     def set_explore_target(self):
         """
@@ -943,7 +937,7 @@ class Bidder(mesa.Agent):
                     if self.jobs:
                         self.create_auction(self.jobs[0])
 
-    
+
 
 class LargeDebris(mesa.Agent):
     """Represents a large piece of debris on the beach."""

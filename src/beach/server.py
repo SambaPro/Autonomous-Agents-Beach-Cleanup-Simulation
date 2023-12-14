@@ -8,6 +8,7 @@ SIZE_OF_CANVAS_IN_PIXELS_X = 400
 SIZE_OF_CANVAS_IN_PIXELS_Y = 400
 
 EXTENDED = 1 
+NOVEL = 1
 LC_NUM = 2
 CT_NUM = 2
 NUMBER_OF_LARGE_DEBRIS = 8
@@ -59,6 +60,10 @@ simulation_params = {
     ),
     "EXTENDED":mesa.visualization.Checkbox(
         'Extended_Features',
+        True #default
+    ),
+    "NOVEL":mesa.visualization.Checkbox(
+        'Novel_Feature',
         True #default
     )
 }
