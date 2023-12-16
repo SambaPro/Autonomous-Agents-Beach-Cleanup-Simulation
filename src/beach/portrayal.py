@@ -5,26 +5,28 @@ from beach.agents import WasteBin
 from beach.agents import ChargingPoint
 from beach.agents import Obstacle
 from beach.agents import Debris
+from beach.agents import Pheromone
 
 
 def beach_portrayal(agent):
-   """
-   Determine which portrayal to use according to the type of agent.
-   """
-   if isinstance(agent,CT_Robot):
+    """
+    Determine which portrayal to use according to the type of agent.
+    """
+    if isinstance(agent,CT_Robot):
         return CT_portrayal(agent)
-   if isinstance(agent,LC_Robot):
+    if isinstance(agent,LC_Robot):
         return LC_portrayal(agent)
-   elif isinstance(agent, WasteBin):
+    elif isinstance(agent, WasteBin):
        return wastebin_portrayal(agent)
-   elif isinstance(agent, ChargingPoint):
+    elif isinstance(agent, ChargingPoint):
        return chargingpoint_portrayal(agent)
-   elif isinstance(agent, Obstacle):
+    elif isinstance(agent, Obstacle):
        return obstacle_portrayal(agent)
-   elif isinstance(agent, Debris):
+    elif isinstance(agent, Debris):
        return debris_portrayal(agent)
-       
-   else:
+    elif isinstance(agent, Pheromone):
+        return pheromone_portrayal(agent)
+    else:
         return LDebris_portrayal(agent)
 
 def CT_portrayal(CT):
@@ -129,4 +131,18 @@ def obstacle_portrayal(obst):
         "x": obst.x,
         "y": obst.y,
         "Color": "black",
+    }
+
+def pheromone_portrayal(pher):
+    if pher is None:
+        raise AssertionError
+    return {
+        "Shape": "rect",
+        "w": 1,
+        "h": 1,
+        "Filled": "false",
+        "Layer": 0,
+        "x": pher.x,
+        "y": pher.y,
+        "Color": "purple",
     }

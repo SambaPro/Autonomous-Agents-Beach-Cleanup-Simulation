@@ -101,12 +101,9 @@ class Beach(mesa.Model):
 
                 # generate debris in range of cluster centre
                 for n in range(self.n_debris//n_clusters):
-                    while True:
-                        print("centre is:", cluster_centre_x, cluster_centre_y)
-                        point = generate_point(cluster_centre_x, cluster_centre_y, cluster_spread)
-                        print(point)
-                        #if self.grid.is_cell_empty((x,y)):
-                        break
+                    #print("centre is:", cluster_centre_x, cluster_centre_y)
+                    point = generate_point(cluster_centre_x, cluster_centre_y, cluster_spread)
+                    #print(point)
 
                     d = Debris(self.n,(point[0], point[1]),self)
                     self.schedule.add(d)

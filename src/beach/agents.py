@@ -5,14 +5,15 @@ import math
 
 """ Extended Features from Assignment 2 """
 NEW_DEBRIS_CHANCE = 0.01     # Chance to add new debris to beach 
-VOTING_TYPE = "PLURALITY"      # PLURALITY or ANTIPLURALITY
+VOTING_TYPE = "PLURALITY"    # PLURALITY or ANTIPLURALITY
 
 """ Novel Feature Parameters"""
 n_clusters = 6                # Number of clusters of debris
 cluster_spread = 3            # Max distance of debris from cluster
+pheromone_strength = 200       # Base pheromone strength, decreases by 1 each timestep
 
 """ Beach Parameters"""
-NUMBER_OF_CELLS = 50
+NUMBER_OF_CELLS = 75
 n = 0
 n_segments = 10              # Must be large otherwise agents may miss areas/debris
 CT_explored_segments = []    # Makes it more likely that unexplored segments will be targeted
@@ -24,6 +25,7 @@ EXPLORING = 1         # Exploring in random direction and magnitude
 EMPTYING = 2          # Moving towards wastebin / Emptying cargo
 CHARGING = 3          # Moving towards charging point/ Waiting to be fully charged
 PICKING = 4           # Moving to target
+FOLLOWING_TRAIL = 5   # LC agent following pheromone trail
 
 """ Debris States """
 UNDONE = 0
@@ -38,12 +40,12 @@ SCAN_RANGE = 5
 CT_MAX_PAYLOAD = 3
 CT_SPEED = 1
 NEEDS_CHARGE = True
-MAX_CHARGE = 750    # Maximum starting charge
+MAX_CHARGE = 750     # Maximum starting charge
 MIN_CHARGE = 100     # Reserve charge when determining when to returning to charging station 
 CHARGING_SPEED = 50  # Charge restored each step once at charging station
 
 # LC Parameters
-LC_MAX_PAYLOAD = 20
+LC_MAX_PAYLOAD = 10
 LC_SPEED = 3
 
 
@@ -139,6 +141,7 @@ class CT_Robot(mesa.Agent):
         """
 
         # Debug Print Statements 
+        """
         print("CT", self.unique_id, "state is:", self.state)
         print("CT", self.unique_id, "position is: ", self.x, ",", self.y)
         if self.target:
@@ -148,7 +151,7 @@ class CT_Robot(mesa.Agent):
         print("CT", self.unique_id, "charge is:", self.charge)
         print("Distance to charging station is:", self.chp_distance)
         print("Must return", self.must_return)
-
+        """
 
         ld  = [a for a in self.model.schedule.agents if (isinstance(a,LargeDebris) and (a.state == UNDONE or self.state == UNDERWAY))]
         print("Large Debris left", len(ld))
@@ -481,7 +484,10 @@ class LC_Robot(mesa.Agent):
         self.payload = 0
         self.max_payload = max_payload
         self.speed = speed
-        self.target = None # (x,y,unique_id)
+        self.target = None       # (x,y,unique_id)
+        self.next_ph = None      # To setup trail of pheromones
+        self.trail_cooldown = 0  # Allows agent to explore at end of trail
+        self.last_placed = None
 
 
     @property
@@ -492,6 +498,23 @@ class LC_Robot(mesa.Agent):
     def atWasteBin(self):
         wb = [a for a in self.model.schedule.agents if isinstance(a,WasteBin)]
         return self.x == wb[0].x and self.y == wb[0]
+
+    @property
+    def LargeDebris_within_range(self):
+        ld = [a for a in self.model.schedule.agents if isinstance(a,LargeDebris) and get_distance(self, a) < SCAN_RANGE and a.state == UNDONE]
+        if ld:
+            return ld[0]
+
+    @property
+    def pheromones_within_range(self):
+        ph = [a for a in self.model.schedule.agents if isinstance(a,Pheromone) and get_distance(self, a) < SCAN_RANGE]
+        print("finding pheromones within range")
+        if ph:
+            print("Pheromone found")
+            return ph
+        else: 
+            print("Pheromone not found")
+            return False
 
     def targetWasteBin(self):
         wb = [a for a in self.model.schedule.agents if isinstance(a,WasteBin)]
@@ -505,14 +528,143 @@ class LC_Robot(mesa.Agent):
         ld = [a for a in self.model.schedule.agents if (isinstance(a,LargeDebris) and (a.state == UNDONE or self.state == UNDERWAY))]
         return len(ld) != 0
 
+
     def step(self):
         """
         * Obtain action as a result of deliberation
         * trigger action
         """
-        action = getattr(self, self.deliberate())
+        if self.model.NOVEL:
+            action = getattr(self, self.deliberate_ACO())
+            self.trail_cooldown -= 1
+            if self.trail_cooldown < 0:
+                self.trail_cooldown = 0
+        else:
+            action = getattr(self, self.deliberate())
+
         action()
 
+
+    def deliberate_ACO(self):
+        """
+        Simple rule-based architecture, should determine the action to execute based on the robot state.
+        """
+        # Debug Print Statements
+        print("LC", self.unique_id, "state is:", self.state)
+        print("LC", self.unique_id, "position is: ", self.x, ",", self.y)
+        if self.target:
+            print("LC", self.unique_id, "target is at:", self.target[0], self.target[1])
+        print("Payload is", self.payload)
+
+        # Default action (End)
+        action = "wait"
+
+        # Create Job if large debris found
+        ld = self.LargeDebris_within_range
+        if ld:
+            self.create_job(ld)
+
+        if self.state == FOLLOWING_TRAIL:
+            # If debris in range pick it
+            if self.find_target(): # Target within range
+                self.state = PICKING
+
+            elif (self.x == self.target[0] and self.y == self.target[1]):
+                if self.next_ph.next_ph:
+                    print("following trail")
+                    self.target = (self.next_ph.next_ph.x, self.next_ph.next_ph.y, self.next_ph.next_ph.unique_id)
+                    self.next_ph = self.next_ph.next_ph
+                    print("new target is",self.target)
+                    print("new next_ph is", self.next_ph)
+                    action = "move_fw"
+                else:
+                    self.next_ph = None
+                    self.target = None
+                    self.state = EXPLORING
+                    self.trail_cooldown += 10
+            else:
+                if self.containsObstacle(self.target[0], self.target[1]):
+                    self.next_ph = None
+                    self.target = None
+                    self.state = EXPLORING
+                    self.trail_cooldown += 10
+                else:
+                    action = "move_fw"
+
+
+        elif self.state == EXPLORING:
+            if not self.DebrisLeft() and not self.LargeDebrisLeft():
+                self.state = IDLE
+                return action
+
+            if self.find_target(): # Debris within range
+                self.state = PICKING
+            
+            elif self.pheromones_within_range and self.trail_cooldown == 0:
+                print("detecting pheromones")
+                self.state = FOLLOWING_TRAIL
+                self.next_ph = self.choose_trail()
+                self.target = [self.next_ph.x, self.next_ph.y,self.next_ph.unique_id]
+                while self.containsObstacle(self.target[0], self.target[1]):
+                    self.target = [self.next_ph.next_ph.x, self.next_ph.next_ph.y,self.next_ph.next_ph.unique_id]
+                action = "move_fw"
+
+            elif not self.target or self.x == self.target[0] and self.y == self.target[1]:
+                self.set_explore_target()
+
+            else:
+                action = "move_fw"
+
+        elif self.state == EMPTYING:
+            if (self.x == self.target[0] and self.y == self.target[1]):
+                print("CT is at wastebin, now unloading")
+                action = "drop_off"
+            else:
+                #print("moving towards waste bin")
+                self.place_pheromone()
+                action = "move_fw"
+
+        elif self.state == IDLE:
+            # If no debris left
+            if not self.DebrisLeft() and not self.LargeDebrisLeft():
+                #print("there are no debris left to do")
+                return action
+            
+            elif not self.DebrisLeft() and self.payload:
+                #print("there are no debris left to do")
+                #print("Moving Payload to waste bin")
+                action = "move_to_bin"
+                return action
+            
+            if self.payload >= self.max_payload:
+                #print("moving to bin")
+                action = "move_to_bin"
+
+            elif self.DebrisLeft() or self.LargeDebrisLeft():
+                if self.pheromones_within_range:
+                    self.state = FOLLOWING_TRAIL
+                    self.next_ph = self.choose_trail()
+                    self.target = [self.next_ph.x, self.next_ph.y, self.next_ph.unique_id]
+
+                else:
+                    print("Robot is now exploring")
+                    self.state = EXPLORING
+            else:
+                self.state = IDLE
+
+        elif self.state == PICKING:
+            if (self.x == self.target[0]) and (self.y == self.target[1]):
+                #print("Robot is now picking")
+                action = "pick"
+            else:
+                #print("Robot is now moving forwards")
+                action = "move_fw"
+        else:
+            #print("Robot is now returning to charging station")
+            action = "goto_charging_station" # Return to base
+        return action
+
+    
     # Robot decision model
     def deliberate(self):
         """
@@ -527,6 +679,11 @@ class LC_Robot(mesa.Agent):
 
         # Default action (End)
         action = "wait"
+
+        # Create Job if large debris found
+        ld = self.LargeDebris_within_range
+        if ld:
+            self.create_job(ld)
 
         if self.state == EXPLORING:
             if not self.DebrisLeft() and not self.LargeDebrisLeft():
@@ -583,8 +740,6 @@ class LC_Robot(mesa.Agent):
             action = "goto_charging_station" # Return to base
         return action
 
-    def deliberate_ACO():
-        return
     
     # Robot actions
     def set_explore_target(self):
@@ -616,20 +771,10 @@ class LC_Robot(mesa.Agent):
     # Robot actions
     def find_target(self):
         """
-        Scans area for Large Debris and creates job if found.
         Finds Debris within area and sets it as target.
-        If no Debris found, continue exploring.
+        If no Debris found, continue.
         Return True if debris is found, else False
         """
-
-        # Scan area for Large Debris and create job if found
-        ld = [a for a in self.model.schedule.agents if (isinstance(a,LargeDebris) and a.state == UNDONE)]
-        if ld:
-            # Get all Large Debris within range
-            ld = [x for x in ld if get_distance(self, x) <= SCAN_RANGE]
-            for x in ld:
-                print("Creating Job")
-                self.create_job(x)
 
 
         # Find Debris within area and sets it as target.
@@ -741,6 +886,7 @@ class LC_Robot(mesa.Agent):
         * Remove Debris from game
         * Add 1 to payload
         * If payload exceeds 50%, decrease speed
+        * If returning to wastebin, set trail start
         """
         debris = [a for a in self.model.schedule.agents if isinstance(a,Debris) and a.unique_id==self.target[2]]
         self.payload += 1
@@ -755,9 +901,9 @@ class LC_Robot(mesa.Agent):
         # If maximum payload is exceeded set target to waste bin
         if self.payload >= self.max_payload:
             self.state = EMPTYING
-            wb = [a for a in self.model.schedule.agents if isinstance(a,WasteBin)]
-            self.target = (wb[0].x,wb[0].y, wb[0].unique_id)
+            self.targetWasteBin()
             print("Heading towards waste bin at", self.target[0], self.target[1])
+            self.trail_start = (self.x,self.y)
         else:
             self.target = None
             self.state = IDLE
@@ -775,6 +921,7 @@ class LC_Robot(mesa.Agent):
         self.payload = 0
         self.target = None
         self.speed = LC_SPEED
+        self.last_placed = None
         self.move()
    
     def advance(self):
@@ -794,7 +941,32 @@ class LC_Robot(mesa.Agent):
     def create_job(self, ld):
         bd = [a for a in self.model.schedule.agents if isinstance(a,Bidder)][0]
         if ld not in bd.jobs:
+            print("Creating job", ld)
             bd.jobs.append(ld)
+    
+    def place_pheromone(self):
+        ph = Pheromone(id=self.model.n, pos=(self.x,self.y), model=self.model, next_ph=self.last_placed)
+
+        self.last_placed = ph
+        self.model.schedule.add(ph)
+        try:
+            self.model.grid.place_agent(ph,(self.x,self.y))
+        except:
+            self.model.grid.place_agent(ph,(abs(self.x-1),abs(self.y-1)))
+
+        self.model.n += 1
+        return
+
+    def choose_trail(self):
+        """
+        * Chooses trail based on pheromones within scan range
+        * Returns pheremone object
+        """
+        ph = [a for a in self.model.schedule.agents if isinstance(a,Pheromone) and get_distance(self, a) < SCAN_RANGE]
+        print("Pheromones within range are:", ph)
+
+        random_ph = random.choice(ph)
+        return (random_ph)
         
 
 class Bidder(mesa.Agent):
@@ -989,6 +1161,27 @@ class Obstacle(mesa.Agent):
         """
         super().__init__(id, model)
         self.x, self.y = pos
+
+class Pheromone(mesa.Agent):
+    """ A Pheremone generated by an LC agent while returning to the wastebin"""
+    def __init__(self, id, pos, model, next_ph):
+        """
+        Initialise position of the Pheromone
+        """
+        super().__init__(id, model)
+        self.x, self.y = pos
+        self.next_ph = next_ph        # Previous pheromone in trail
+        self.strength = pheromone_strength    # Represents how recent the pheromone was placed, decreases overtime to 0 then pheromone is removed
+        if self.next_ph:
+            print("placing pheromone, next in trail is", self.next_ph.x, self.next_ph.y)
+
+    def step(self):
+        #print("Pheromone", self.unique_id, "strength is:", self.strength, "position is:", self.x, self.y, "target is:", self.target)
+        self.strength -= 1
+
+        if self.strength <= 0:
+            self.model.grid.remove_agent(self)
+            self.model.schedule.remove(self)
 
 
 # Global Functions
